@@ -45,16 +45,16 @@ typedef enum Coc_Log_Level {
         fprintf(COC_LOG_OUTPUT, "[DEBUG] ");                                \
         break;                                                              \
     case COC_INFO:                                                          \
-        fprintf(COC_LOG_OUTPUT, "[DEBUG] ");                                \
+        fprintf(COC_LOG_OUTPUT, "[INFO] ");                                 \
         break;                                                              \
     case COC_WARNING:                                                       \
-        fprintf(COC_LOG_OUTPUT, "[DEBUG] ");                                \
+        fprintf(COC_LOG_OUTPUT, "[WARNING] ");                              \
         break;                                                              \
     case COC_ERROR:                                                         \
-        fprintf(COC_LOG_OUTPUT, "[DEBUG] ");                                \
+        fprintf(COC_LOG_OUTPUT, "[ERROR] ");                                \
         break;                                                              \
     case COC_FATAL:                                                         \
-        fprintf(COC_LOG_OUTPUT, "[DEBUG] ");                                \
+        fprintf(COC_LOG_OUTPUT, "[FATAL] ");                                \
         break;                                                              \
     default:                                                                \
         break;                                                              \
