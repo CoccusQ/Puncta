@@ -67,10 +67,16 @@ static inline Token lexer_next(Lexer *l) {
     if (isdigit(c)) {
         Coc_String num = {0};
         bool is_float = false;
-        while (isdigit(lexer_peek(l))) {
+        bool is_hex = false;
+        if (lexer_peek(l) == '0' && (lexer_peek2(l) == 'x' || lexer_peek2(l) == 'X')) {
+            is_hex = true;
+            coc_vec_append(&num, lexer_get(l));
             coc_vec_append(&num, lexer_get(l));
         }
-        if (lexer_peek(l) == '.' && isdigit(lexer_peek2(l))) {
+        while (isdigit(lexer_peek(l)) || (is_hex && isalnum(lexer_peek(l)))) {
+            coc_vec_append(&num, lexer_get(l));
+        }
+        if (!is_hex && lexer_peek(l) == '.' && isdigit(lexer_peek2(l))) {
             is_float = true;
             coc_vec_append(&num, lexer_get(l));
             while (isdigit(lexer_peek(l))) {
@@ -90,7 +96,7 @@ static inline Token lexer_next(Lexer *l) {
                 }
             };
         } else {
-            long long int_val = strtoll(num.items, &end_ptr, 10);
+            long long int_val = strtoll(num.items, &end_ptr, is_hex ? 16 : 10);
             return (Token){
                 .kind = tok_number,
                 .number = (Number){
