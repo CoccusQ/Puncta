@@ -26,6 +26,13 @@ typedef struct Lexer {
     size_t pos;
 } Lexer;
 
+static inline Lexer *lexer_init(Coc_String source) {
+    Lexer *lex = (Lexer *)malloc(sizeof(Lexer));
+    lex->src = source;
+    lex->pos = 0;
+    return lex;
+}
+
 static inline char lexer_peek(Lexer *l) {
     if (l->pos >= l->src.size) return '\0';
     return l->src.items[l->pos];
@@ -139,6 +146,15 @@ typedef struct Parser {
     Program instructions;
     LabelHashTable labels;
 } Parser;
+
+static inline Parser *parser_init(Lexer *lex) {
+    Parser *parser = (Parser *)malloc(sizeof(Parser));
+    parser->lex = lex;
+    parser->cur_tok = lexer_next(lex);
+    parser->instructions = (Program){0};
+    parser->labels = (LabelHashTable){0};
+    return parser;
+}
 
 static inline void parser_next(Parser *p) {
     p->cur_tok = lexer_next(p->lex);
@@ -272,6 +288,16 @@ typedef struct VM {
     int pc;
 } VM;
 
+static inline VM *vm_init(Program *prog, LabelHashTable *labels) {
+    VM *vm = (VM *)malloc(sizeof(VM));
+    vm->prog = prog;
+    vm->labels = labels;
+    vm->vars = (VarHashTable){0};
+    vm->acts = (ActHashTable){0};
+    vm->pc = 0;
+    return vm;
+}
+
 static inline void register_act(VM *vm, const char *name, Action act) {
     Coc_String act_name = {0};
     coc_str_append(&act_name, name);
@@ -296,7 +322,7 @@ static inline Action *vm_get_action(VM *vm, Coc_String *act_name) {
     if (act == NULL) {
         coc_str_append_null(act_name);
         coc_log(COC_ERROR, "Runtime error at line %d: action '%s' not found",
-                vm->pc + 1, act_name);
+                vm->pc + 1, act_name->items);
         exit(1);
     }
     return act;
@@ -308,14 +334,10 @@ static inline int vm_get_label(VM *vm, Coc_String *label) {
     if (pos == NULL) {
         coc_str_append_null(label);
         coc_log(COC_ERROR, "Runtime error at line %d: label '%s' not found",
-                vm->pc + 1, label);
+                vm->pc + 1, label->items);
         exit(1);
     }
     return *pos;
-}
-
-static inline void vm_call_label(VM *vm, Coc_String *label) {
-    vm->pc = vm_get_label(vm, label);
 }
 
 static inline void vm_assign(VM *vm, Instruction *inst) {
@@ -365,7 +387,6 @@ static inline void vm_label(VM *vm, Instruction *inst) {
 }
 
 void run(VM *vm) {
-    vm->pc = 0;
     int n = vm->prog->size;
     while (vm->pc < n) {
         Instruction *inst = &vm->prog->items[vm->pc];
@@ -389,6 +410,11 @@ void run(VM *vm) {
             break;
         }
     }
+}
+
+static inline void vm_call_label(VM *vm, Coc_String *label) {
+    vm->pc = vm_get_label(vm, label);
+    run(vm);
 }
 
 static inline void act_print(Number *n) {
@@ -450,35 +476,20 @@ static inline void register_builtin_actions(VM *vm) {
     register_act(vm, "puts",  act_puts);
 }
 
-static inline int run_file(const char *filename, void (*register_user_actions)(VM *)) {
+static inline VM *run_file(const char *filename, void (*register_user_actions)(VM *)) {
     Coc_String source = {0};
-    if (coc_read_entire_file(filename, &source) != 0) return errno;
-    Lexer lex = {
-        .src = source,
-        .pos = 0
-    };
-    Parser parser = {
-        .lex = &lex,
-        .cur_tok = 0,
-        .instructions = {0},
-        .labels = {0}
-    };
-    parser_next(&parser);
-    parse_program(&parser);
-    VM vm = {
-        .prog = &parser.instructions,
-        .labels = &parser.labels,
-        .acts = {0},
-        .vars = {0},
-        .pc = 0
-    };
-    register_builtin_actions(&vm);
+    if (coc_read_entire_file(filename, &source) != 0) return NULL;
+    Lexer *lex = lexer_init(source);
+    Parser *parser = parser_init(lex);
+    parse_program(parser);
+    VM *vm = vm_init(&parser->instructions, &parser->labels);
+    register_builtin_actions(vm);
     if (register_user_actions != NULL) {
         coc_log(COC_DEBUG, "Register user actions");
-        register_user_actions(&vm);
+        register_user_actions(vm);
     }
-    run(&vm);
-    return 0;
+    run(vm);
+    return vm;
 }
 
 #endif
