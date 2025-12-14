@@ -79,7 +79,8 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     FILE *fp = coc_canvas_init(canvas, "output.ppm");
-    run_file(argv[1], register_user_actions);
+    VM *vm = run_file(argv[1], register_user_actions);
     coc_canvas_save(canvas, fp);
+    vm_free(vm);
     return 0;
 }

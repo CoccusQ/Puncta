@@ -27,10 +27,15 @@ typedef struct Lexer {
 } Lexer;
 
 static inline Lexer *lexer_init(Coc_String source) {
-    Lexer *lex = (Lexer *)malloc(sizeof(Lexer));
+    Lexer *lex = (Lexer *)COC_MALLOC(sizeof(Lexer));
     lex->src = source;
     lex->pos = 0;
     return lex;
+}
+
+static inline void lexer_free(Lexer *l) {
+    coc_str_free(&l->src);
+    COC_FREE(l);
 }
 
 static inline char lexer_peek(Lexer *l) {
@@ -64,23 +69,27 @@ static inline Token lexer_next(Lexer *l) {
         }
         return (Token){.kind = tok_identifier, .text = id};
     }
-    if (isdigit(c)) {
+    if (isdigit(c) || ((c == '-' || c == '+') && isdigit(lexer_peek2(l)))) {
         Coc_String num = {0};
         bool is_float = false;
         bool is_hex = false;
+        if (lexer_peek(l) == '-') coc_vec_append(&num, lexer_get(l));
+        else if (lexer_peek(l) == '+') coc_vec_append(&num, lexer_get(l));
         if (lexer_peek(l) == '0' && (lexer_peek2(l) == 'x' || lexer_peek2(l) == 'X')) {
             is_hex = true;
             coc_vec_append(&num, lexer_get(l));
             coc_vec_append(&num, lexer_get(l));
         }
-        while (isdigit(lexer_peek(l)) || (is_hex && isalnum(lexer_peek(l)))) {
-            coc_vec_append(&num, lexer_get(l));
+        while (isdigit(lexer_peek(l)) || (is_hex && isalnum(lexer_peek(l))) || lexer_peek(l) == ',') {
+            if (lexer_peek(l) == ',') lexer_get(l);
+            else coc_vec_append(&num, lexer_get(l));
         }
         if (!is_hex && lexer_peek(l) == '.' && isdigit(lexer_peek2(l))) {
             is_float = true;
             coc_vec_append(&num, lexer_get(l));
-            while (isdigit(lexer_peek(l))) {
-                coc_vec_append(&num, lexer_get(l));
+            while (isdigit(lexer_peek(l)) || lexer_peek(l) == ',') {
+                if (lexer_peek(l) == ',') lexer_get(l);
+                else coc_vec_append(&num, lexer_get(l));
             }
         }
         coc_str_append_null(&num);
@@ -154,12 +163,17 @@ typedef struct Parser {
 } Parser;
 
 static inline Parser *parser_init(Lexer *lex) {
-    Parser *parser = (Parser *)malloc(sizeof(Parser));
+    Parser *parser = (Parser *)COC_MALLOC(sizeof(Parser));
     parser->lex = lex;
     parser->cur_tok = lexer_next(lex);
     parser->instructions = (Program){0};
     parser->labels = (LabelHashTable){0};
     return parser;
+}
+
+static inline void parser_free(Parser *p) {
+    lexer_free(p->lex);
+    COC_FREE(p);
 }
 
 static inline void parser_next(Parser *p) {
@@ -192,7 +206,7 @@ static inline void parse_statement(Parser *p) {
         inst.op = OP_LABEL;
         inst.Label = first.text;
         coc_vec_append(&p->instructions, inst);
-        coc_ht_insert(&p->labels, first.text, p->instructions.size - 1);
+        coc_ht_insert_move(&p->labels, &first.text, p->instructions.size - 1);
         return;
     }
     if (parser_accept(p, (TokenKind)';')) {
@@ -287,32 +301,41 @@ typedef struct ActHashTable {
 } ActHashTable;
 
 typedef struct VM {
-    Program *prog;
-    LabelHashTable *labels;
+    Program prog;
+    LabelHashTable labels;
     VarHashTable vars;
     ActHashTable acts;
     int pc;
 } VM;
 
-static inline VM *vm_init(Program *prog, LabelHashTable *labels) {
-    VM *vm = (VM *)malloc(sizeof(VM));
-    vm->prog = prog;
-    vm->labels = labels;
+static inline VM *vm_init(Parser *p) {
+    VM *vm = (VM *)COC_MALLOC(sizeof(VM));
+    coc_vec_move(&vm->prog, &p->instructions);
+    coc_vec_move(&vm->labels, &p->labels);
     vm->vars = (VarHashTable){0};
     vm->acts = (ActHashTable){0};
     vm->pc = 0;
+    parser_free(p);
     return vm;
+}
+
+static inline void vm_free(VM *vm) {
+    coc_vec_free(&vm->prog);
+    coc_ht_free(&vm->labels);
+    coc_ht_free(&vm->acts);
+    coc_ht_free(&vm->vars);
+    COC_FREE(vm);
 }
 
 static inline void register_act(VM *vm, const char *name, Action act) {
     Coc_String act_name = {0};
     coc_str_append(&act_name, name);
-    coc_ht_insert(&vm->acts, act_name, act);
+    coc_ht_insert_move(&vm->acts, &act_name, act);
 }
 
 static inline Number *vm_get_var(VM *vm, Coc_String *var_name) {
     Number *value = NULL;
-    coc_ht_find(&vm->vars, *var_name, value);
+    coc_ht_find(&vm->vars, var_name, value);
     if (value == NULL) {
         coc_str_append_null(var_name);
         coc_log(COC_ERROR, "Runtime error at line %d: variable '%s' not found",
@@ -324,7 +347,7 @@ static inline Number *vm_get_var(VM *vm, Coc_String *var_name) {
 
 static inline Action *vm_get_action(VM *vm, Coc_String *act_name) {
     Action *act = NULL;
-    coc_ht_find(&vm->acts, *act_name, act);
+    coc_ht_find(&vm->acts, act_name, act);
     if (act == NULL) {
         coc_str_append_null(act_name);
         coc_log(COC_ERROR, "Runtime error at line %d: action '%s' not found",
@@ -336,7 +359,7 @@ static inline Action *vm_get_action(VM *vm, Coc_String *act_name) {
 
 static inline int vm_get_label(VM *vm, Coc_String *label) {
     int *pos = NULL;
-    coc_ht_find(vm->labels, *label, pos);
+    coc_ht_find(&vm->labels, label, pos);
     if (pos == NULL) {
         coc_str_append_null(label);
         coc_log(COC_ERROR, "Runtime error at line %d: label '%s' not found",
@@ -350,7 +373,7 @@ static inline void vm_assign(VM *vm, Instruction *inst) {
     Number *value = NULL;
     if (inst->is_B_number) value = &inst->number;
     else value = vm_get_var(vm, &inst->OperandB);
-    coc_ht_insert(&vm->vars, inst->OperandA, *value);
+    coc_ht_insert_copy(&vm->vars, &inst->OperandA, *value);
     vm->pc++;
 }
 
@@ -393,9 +416,9 @@ static inline void vm_label(VM *vm, Instruction *inst) {
 }
 
 void run(VM *vm) {
-    int n = vm->prog->size;
+    int n = vm->prog.size;
     while (vm->pc < n) {
-        Instruction *inst = &vm->prog->items[vm->pc];
+        Instruction *inst = &vm->prog.items[vm->pc];
         switch (inst->op) {
         case OP_ASSIGN:
             vm_assign(vm, inst);
@@ -488,7 +511,7 @@ static inline VM *run_file(const char *filename, void (*register_user_actions)(V
     Lexer *lex = lexer_init(source);
     Parser *parser = parser_init(lex);
     parse_program(parser);
-    VM *vm = vm_init(&parser->instructions, &parser->labels);
+    VM *vm = vm_init(parser);
     register_builtin_actions(vm);
     if (register_user_actions != NULL) {
         coc_log(COC_DEBUG, "Register user actions");
