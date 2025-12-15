@@ -24,12 +24,14 @@ typedef struct Token {
 typedef struct Lexer {
     Coc_String src;
     size_t pos;
+    int line;
 } Lexer;
 
 static inline Lexer *lexer_init(Coc_String source) {
     Lexer *lex = (Lexer *)COC_MALLOC(sizeof(Lexer));
     lex->src = source;
     lex->pos = 0;
+    lex->line = 1;
     return lex;
 }
 
@@ -54,11 +56,28 @@ static inline char lexer_get(Lexer *l) {
 }
 
 static inline void skip_whitespace(Lexer *l) {
-    while (isspace(lexer_peek(l))) l->pos++;
+    while (isspace(lexer_peek(l))) {
+        if (lexer_peek(l) == '\n') l->line++;
+        l->pos++;
+    }
+}
+
+static inline void skip_comment(Lexer *l) {
+    while (lexer_peek(l) == '(') {
+        l->pos++;
+        while (lexer_peek(l) && lexer_peek(l) != ')') {
+            if (lexer_peek(l) == '\n') l->line++;
+            l->pos++;
+        }
+        if (lexer_peek(l) == ')') l->pos++;
+        else break;
+        skip_whitespace(l);
+    }
 }
 
 static inline Token lexer_next(Lexer *l) {
     skip_whitespace(l);
+    skip_comment(l);
     char c = lexer_peek(l);
     if (c == '\0') return (Token){.kind = tok_eof};
     if (isalpha(c) || c == '_') {
@@ -115,8 +134,58 @@ static inline Token lexer_next(Lexer *l) {
             };
         }
     }
-    char ch = lexer_get(l);
-    return (Token){.kind = (TokenKind)ch};
+    if (c == '"') {
+        lexer_get(l);
+        uint64_t value = 0;
+        int len = 0;
+        while (lexer_peek(l) && lexer_peek(l) != '"') {
+            if (len >= 8) {
+                coc_log(COC_ERROR, "Lexical error at line %d: string literal too long (max 8 characters allowed)", l->line);
+                exit(1);
+            }
+            char ch = lexer_get(l);
+            if (ch == '\n') {
+                coc_log(COC_ERROR, "Lexical error at line %d: unescaped '\\n' in string literal", l->line);
+                exit(1);
+            }
+            if (ch == '\\') {
+                char esc = lexer_get(l);
+                switch (esc) {
+                case 'a': ch = '\a'; break;
+                case 'b': ch = '\b'; break;
+                case 't': ch = '\t'; break;
+                case 'n': ch = '\n'; break;
+                case 'v': ch = '\v'; break;
+                case 'f': ch = '\f'; break;
+                case 'r': ch = '\r'; break;
+                case '"': ch = '"' ; break;
+                case '\\':ch = '\\'; break;
+                case '\0':
+                    coc_log(COC_ERROR, "Lexical error at line %d: unterminated escape sequence", l->line);
+                    exit(1);
+                default:
+                    coc_log(COC_ERROR, "Lexical error at line %d: invalid escape sequence \\%c", l->line, esc);
+                    exit(1);
+                }
+            }
+            value = (value << 8) | (uint64_t)ch;
+            len++;
+        }
+        if (lexer_peek(l) != '"') {
+            coc_log(COC_ERROR, "Lexical error at line %d: unterminated string (missing '\"')", l->line);
+            exit(1);
+        }
+        value <<= (8 - len) * 8;
+        lexer_get(l);
+        return (Token){
+            .kind = tok_number,
+            .number = (Number){
+                .int_value = value,
+                .is_float = false
+            }
+        };
+    }
+    return (Token){.kind = (TokenKind)lexer_get(l)};
 }
 
 typedef enum OpCode {
@@ -190,7 +259,7 @@ static inline bool parser_accept(Parser *p, TokenKind k) {
 
 static inline Token parser_expect(Parser *p, TokenKind k, const char *msg) {
     if (p->cur_tok.kind != k) {
-        coc_log(COC_ERROR, "Syntax error at line %d: expected %s",
+        coc_log(COC_ERROR, "Syntax error at line %lld: expected %s",
                 p->instructions.size + 1, msg);
         exit(1);
     }
@@ -489,6 +558,27 @@ static inline void act_input(Number *n) {
     }
 }
 
+static inline void act_getc(Number *n) {
+    n->int_value = getchar();
+    n->is_float = false;
+}
+
+static inline void act_putc(Number *n) {
+    int value = n->is_float ? (int)n->float_value : (int)n->int_value;
+    putchar(value);
+}
+
+static inline void act_gets(Number *n) {
+    char buf[10];
+    fgets(buf, sizeof(buf), stdin);
+    uint64_t value = 0;
+    for (int i = 0; buf[i] != '\0'; i++) {
+        value = (value << 8) | (uint64_t)buf[i];
+    }
+    n->int_value = value;
+    n->is_float = false;
+}
+
 static inline void act_puts(Number *n) {
     uint64_t value = n->is_float ? (uint64_t)n->float_value : (uint64_t)n->int_value;
     for (int i = 7; i >= 0; i--) {
@@ -498,11 +588,14 @@ static inline void act_puts(Number *n) {
 }
 
 static inline void register_builtin_actions(VM *vm) {
-    register_act(vm, "print", act_print);
     register_act(vm, "inc",   act_inc);
     register_act(vm, "dec",   act_dec);
     register_act(vm, "input", act_input);
+    register_act(vm, "print", act_print);
+    register_act(vm, "putc",  act_putc);
+    register_act(vm, "getc",  act_getc);
     register_act(vm, "puts",  act_puts);
+    register_act(vm, "gets",  act_gets);
 }
 
 static inline VM *run_file(const char *filename, void (*register_user_actions)(VM *)) {
