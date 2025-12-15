@@ -19,6 +19,7 @@ typedef struct Token {
     TokenKind kind;
     Coc_String text;
     Number number;
+    int line;
 } Token;
 
 typedef struct Lexer {
@@ -79,14 +80,14 @@ static inline Token lexer_next(Lexer *l) {
     skip_whitespace(l);
     skip_comment(l);
     char c = lexer_peek(l);
-    if (c == '\0') return (Token){.kind = tok_eof};
+    if (c == '\0') return (Token){.kind = tok_eof, .line = l->line};
     if (isalpha(c) || c == '_') {
         Coc_String id = {0};
         coc_vec_append(&id, lexer_get(l));
         while (isalnum(lexer_peek(l)) || lexer_peek(l) == '_') {
             coc_vec_append(&id, lexer_get(l));
         }
-        return (Token){.kind = tok_identifier, .text = id};
+        return (Token){.kind = tok_identifier, .text = coc_str_move(&id), .line = l->line};
     }
     if (isdigit(c) || ((c == '-' || c == '+') && isdigit(lexer_peek2(l)))) {
         Coc_String num = {0};
@@ -99,38 +100,62 @@ static inline Token lexer_next(Lexer *l) {
             coc_vec_append(&num, lexer_get(l));
             coc_vec_append(&num, lexer_get(l));
         }
-        while (isdigit(lexer_peek(l)) || (is_hex && isalnum(lexer_peek(l))) || lexer_peek(l) == ',') {
-            if (lexer_peek(l) == ',') lexer_get(l);
-            else coc_vec_append(&num, lexer_get(l));
+        while (isdigit(lexer_peek(l)) || (is_hex && isalnum(lexer_peek(l)))) {
+            coc_vec_append(&num, lexer_get(l));
         }
         if (!is_hex && lexer_peek(l) == '.' && isdigit(lexer_peek2(l))) {
             is_float = true;
             coc_vec_append(&num, lexer_get(l));
-            while (isdigit(lexer_peek(l)) || lexer_peek(l) == ',') {
-                if (lexer_peek(l) == ',') lexer_get(l);
-                else coc_vec_append(&num, lexer_get(l));
+            while (isdigit(lexer_peek(l))) {
+                coc_vec_append(&num, lexer_get(l));
             }
         }
         coc_str_append_null(&num);
-        char *end_ptr;
+        char *end_ptr = NULL;
         errno = 0;
         if (is_float) {
             double float_val = strtod(num.items, &end_ptr);
+            if (end_ptr == num.items) {
+                coc_log(COC_ERROR,
+                        "Lexical error at line %d: invalid floating-point literal",
+                        l->line);
+                exit(1);
+            }
+            if (errno == ERANGE) {
+                coc_log(COC_ERROR,
+                        "Lexical error at line %d: floating-point literal out of range",
+                        l->line);
+                exit(errno);
+            }
             return (Token){
                 .kind = tok_number,
                 .number = (Number){
                     .float_value = float_val,
                     .is_float = true
-                }
+                },
+                .line = l->line
             };
         } else {
             long long int_val = strtoll(num.items, &end_ptr, is_hex ? 16 : 10);
+            if (end_ptr == num.items) {
+                coc_log(COC_ERROR,
+                        "Lexical error at line %d: invalid %s integer literal",
+                        l->line, is_hex ? "hexical" : "decimal");
+                exit(1);
+            }
+            if (errno == ERANGE) {
+                coc_log(COC_ERROR,
+                        "Lexical error at line %d: %s integer literal out of range",
+                        l->line, is_hex ? "hexical" : "decimal");
+                exit(errno);
+            }
             return (Token){
                 .kind = tok_number,
                 .number = (Number){
                     .int_value = int_val,
                     .is_float = false
-                }
+                },
+                .line = l->line
             };
         }
     }
@@ -140,12 +165,16 @@ static inline Token lexer_next(Lexer *l) {
         int len = 0;
         while (lexer_peek(l) && lexer_peek(l) != '"') {
             if (len >= 8) {
-                coc_log(COC_ERROR, "Lexical error at line %d: string literal too long (max 8 characters allowed)", l->line);
+                coc_log(COC_ERROR,
+                        "Lexical error at line %d: string literal too long (max 8 characters allowed)",
+                        l->line);
                 exit(1);
             }
             char ch = lexer_get(l);
             if (ch == '\n') {
-                coc_log(COC_ERROR, "Lexical error at line %d: unescaped '\\n' in string literal", l->line);
+                coc_log(COC_ERROR,
+                        "Lexical error at line %d: unescaped '\\n' in string literal",
+                        l->line);
                 exit(1);
             }
             if (ch == '\\') {
@@ -161,10 +190,14 @@ static inline Token lexer_next(Lexer *l) {
                 case '"': ch = '"' ; break;
                 case '\\':ch = '\\'; break;
                 case '\0':
-                    coc_log(COC_ERROR, "Lexical error at line %d: unterminated escape sequence", l->line);
+                    coc_log(COC_ERROR,
+                            "Lexical error at line %d: unterminated escape sequence",
+                            l->line);
                     exit(1);
                 default:
-                    coc_log(COC_ERROR, "Lexical error at line %d: invalid escape sequence \\%c", l->line, esc);
+                    coc_log(COC_ERROR,
+                            "Lexical error at line %d: invalid escape sequence \\%c",
+                            l->line, esc);
                     exit(1);
                 }
             }
@@ -172,7 +205,9 @@ static inline Token lexer_next(Lexer *l) {
             len++;
         }
         if (lexer_peek(l) != '"') {
-            coc_log(COC_ERROR, "Lexical error at line %d: unterminated string (missing '\"')", l->line);
+            coc_log(COC_ERROR, 
+                    "Lexical error at line %d: unterminated string (missing '\"')",
+                    l->line);
             exit(1);
         }
         value <<= (8 - len) * 8;
@@ -182,10 +217,18 @@ static inline Token lexer_next(Lexer *l) {
             .number = (Number){
                 .int_value = value,
                 .is_float = false
-            }
+            },
+            .line = l->line
         };
     }
-    return (Token){.kind = (TokenKind)lexer_get(l)};
+    static const char punctuators[] = ",.!?:;";
+    if (strchr(punctuators, c)) {
+        return (Token){.kind = (TokenKind)lexer_get(l), .line = l->line};
+    } else {
+        Coc_String id = {0};
+        coc_vec_append(&id, lexer_get(l));
+        return (Token){.kind = tok_identifier, .text = coc_str_move(&id), .line = l->line};
+    }
 }
 
 typedef enum OpCode {
@@ -203,6 +246,7 @@ typedef struct Instruction {
     Coc_String Label;
     Number number;
     bool is_B_number;
+    int line;
 } Instruction;
 
 typedef struct Program {
@@ -259,8 +303,8 @@ static inline bool parser_accept(Parser *p, TokenKind k) {
 
 static inline Token parser_expect(Parser *p, TokenKind k, const char *msg) {
     if (p->cur_tok.kind != k) {
-        coc_log(COC_ERROR, "Syntax error at line %lld: expected %s",
-                p->instructions.size + 1, msg);
+        coc_log(COC_ERROR, "Syntax error at line %d: expected %s",
+                p->cur_tok.line, msg);
         exit(1);
     }
     Token t = p->cur_tok;
@@ -270,10 +314,12 @@ static inline Token parser_expect(Parser *p, TokenKind k, const char *msg) {
 
 static inline void parse_statement(Parser *p) {
     Token first = parser_expect(p, tok_identifier, "the first identifier");
+    int line = p->cur_tok.line;
     if (parser_accept(p, (TokenKind)':')) {
         Instruction inst = {0};
         inst.op = OP_LABEL;
         inst.Label = first.text;
+        inst.line = line;
         coc_vec_append(&p->instructions, inst);
         coc_ht_insert_move(&p->labels, &first.text, p->instructions.size - 1);
         return;
@@ -282,6 +328,7 @@ static inline void parse_statement(Parser *p) {
         Instruction inst = {0};
         inst.op = OP_JMP;
         inst.Label = first.text;
+        inst.line = line;
         coc_vec_append(&p->instructions, inst);
         return;
     }
@@ -294,6 +341,7 @@ static inline void parse_statement(Parser *p) {
             Instruction inst = {0};
             inst.op = OP_ASSIGN;
             inst.OperandA = first.text;
+            inst.line = line;
             if (second.kind == tok_number) {
                 inst.number = second.number;
                 inst.is_B_number = true;
@@ -311,6 +359,7 @@ static inline void parse_statement(Parser *p) {
                 Instruction inst = {0};
                 inst.op = OP_JEQ;
                 inst.OperandA = first.text;
+                inst.line = line;
                 if (second.kind == tok_number) {
                     inst.number = second.number;
                     inst.is_B_number = true;
@@ -329,10 +378,20 @@ static inline void parse_statement(Parser *p) {
             inst.op = OP_ACT;
             inst.OperandA = first.text;
             inst.OperandB = second.text;
+            inst.line = line;
             coc_vec_append(&p->instructions, inst);
             return;
         }
+
+        coc_log(COC_ERROR, 
+                "Syntax error at line %d: expected '.', '?' or '!' at the end of the statement",
+                line);
+        exit(1);
     }
+    coc_log(COC_ERROR,
+            "Syntax error at line %d: expected identifier or number after ','",
+            line);
+    exit(1);
 }
 
 static inline void parse_program(Parser *p) {
@@ -408,7 +467,7 @@ static inline Number *vm_get_var(VM *vm, Coc_String *var_name) {
     if (value == NULL) {
         coc_str_append_null(var_name);
         coc_log(COC_ERROR, "Runtime error at line %d: variable '%s' not found",
-                vm->pc + 1, var_name->items);
+                vm->prog.items[vm->pc].line, var_name->items);
         exit(1);
     }
     return value;
@@ -420,7 +479,7 @@ static inline Action *vm_get_action(VM *vm, Coc_String *act_name) {
     if (act == NULL) {
         coc_str_append_null(act_name);
         coc_log(COC_ERROR, "Runtime error at line %d: action '%s' not found",
-                vm->pc + 1, act_name->items);
+                vm->prog.items[vm->pc].line, act_name->items);
         exit(1);
     }
     return act;
@@ -432,7 +491,7 @@ static inline int vm_get_label(VM *vm, Coc_String *label) {
     if (pos == NULL) {
         coc_str_append_null(label);
         coc_log(COC_ERROR, "Runtime error at line %d: label '%s' not found",
-                vm->pc + 1, label->items);
+                vm->prog.items[vm->pc].line, label->items);
         exit(1);
     }
     return *pos;
@@ -533,34 +592,73 @@ static inline void act_dec(Number *n) {
 }
 
 static inline void act_input(Number *n) {
-    putchar('>');
     char buf[128];
     if (!fgets(buf, sizeof(buf), stdin)) {
-        coc_log(COC_ERROR, "Input error");
+        coc_log(COC_FATAL, "Input error: fgets() failed");
         exit(1);
     }
     bool is_float = false;
+    bool is_hex = false;
+    if (buf[0] == '0' && (buf[1] == 'x' || buf[1] == 'X'))
+        is_hex = true;
     for (char *p = buf; *p; p++) {
         if (*p == '.') {
             is_float = true;
             break;
         }
     }
-    char *end;
+    errno = 0;
+    char *end_ptr = NULL;
     if (is_float) {
-        double f = strtod(buf, &end);
+        double f = strtod(buf, &end_ptr);
+        if (end_ptr == buf) {
+            coc_log(COC_ERROR, "Input error: invalid floating-point literal");
+            exit(1);
+        }
+        if (*end_ptr != '\0' && *end_ptr != '\r' && *end_ptr != '\n') {
+            coc_log(COC_ERROR, "Input error: invalid character '%c' in floating-point literal", *end_ptr);
+            exit(1);
+        }
+        if (errno == ERANGE) {
+            coc_log(COC_ERROR, "Input error : floating-point literal out of range");
+            exit(errno);
+        }
         n->float_value = f;
         n->is_float = true;
     } else {
-        long long v = strtoll(buf, &end, 10);
+        long long v = strtoll(buf, &end_ptr, is_hex ? 16 : 10);
+        if (end_ptr == buf) {
+            coc_log(COC_ERROR,
+                    "Input error: invalid %s integer literal",
+                    is_hex ? "hexical" : "decimal");
+            exit(1);
+        }
+        if (*end_ptr != '\0' && *end_ptr != '\r' && *end_ptr != '\n') {
+            coc_log(COC_ERROR,
+                    "Input error: invalid character '%c' in %s integer literal",
+                    *end_ptr, is_hex ? "hexical" : "decimal");
+            exit(1);
+        }
+        if (errno == ERANGE) {
+            coc_log(COC_ERROR,
+                    "Input error : %s integer literal out of range",
+                    is_hex ? "hexical" : "decimal");
+            exit(errno);
+        }
         n->int_value = v;
         n->is_float = false;
     }
 }
 
 static inline void act_getc(Number *n) {
-    n->int_value = getchar();
+    int c = getchar();
+    if (c == EOF) {
+        coc_log(COC_FATAL, "Input error: getchar() failed");
+        exit(1);
+    } 
+    n->int_value = c;
     n->is_float = false;
+    while ((c = getchar()) != '\n' && c != EOF);
 }
 
 static inline void act_putc(Number *n) {
@@ -570,7 +668,10 @@ static inline void act_putc(Number *n) {
 
 static inline void act_gets(Number *n) {
     char buf[10];
-    fgets(buf, sizeof(buf), stdin);
+    if (!fgets(buf, sizeof(buf), stdin)) {
+        coc_log(COC_FATAL, "Input error: fgets() failed");
+        exit(1);
+    }
     uint64_t value = 0;
     for (int i = 0; buf[i] != '\0'; i++) {
         value = (value << 8) | (uint64_t)buf[i];
@@ -604,10 +705,11 @@ static inline VM *run_file(const char *filename, void (*register_user_actions)(V
     Lexer *lex = lexer_init(source);
     Parser *parser = parser_init(lex);
     parse_program(parser);
+    coc_log(COC_INFO, "Compile finished: %zu instructions", parser->instructions.size);
     VM *vm = vm_init(parser);
     register_builtin_actions(vm);
     if (register_user_actions != NULL) {
-        coc_log(COC_DEBUG, "Register user actions");
+        coc_log(COC_INFO, "Register user actions");
         register_user_actions(vm);
     }
     run(vm);
