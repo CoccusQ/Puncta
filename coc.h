@@ -25,7 +25,7 @@ typedef enum Coc_Log_Level {
     COC_FATAL
 } Coc_Log_Level;
 
-#define COC_LOG_LEVEL_GLOBAL COC_DEBUG
+#define COC_LOG_LEVEL_GLOBAL COC_WARNING
 #define COC_LOG_TIME_ENABLE  1
 #define COC_LOG_FILE_ENABLE  0
 #define COC_LOG_OUTPUT       stderr
@@ -300,6 +300,10 @@ static inline uint32_t coc_hash_fnv1a(Coc_String *key) {
 #define coc_ht_find(ht, k, v_ptr) do {                                        \
     COC_ASSERT((ht) != NULL);                                                 \
     COC_ASSERT((k) != NULL);                                                  \
+    if ((ht)->size == 0) {                                                    \
+        (v_ptr) = NULL;                                                       \
+        break;                                                                \
+    }                                                                         \
     uint32_t idx = coc_hash_value(k) % (ht)->capacity;                        \
     for (size_t i = 0; i < (ht)->capacity; i++) {                             \
         if (!(ht)->items[idx].is_used) {                                      \
