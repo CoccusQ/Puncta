@@ -1,6 +1,7 @@
 #ifndef PUNCTA_H_
 #define PUNCTA_H_
 #include <math.h>
+#include <limits.h>
 #include "coc.h"
 
 typedef struct Number {
@@ -8,6 +9,19 @@ typedef struct Number {
     double float_value;
     bool is_float;
 } Number;
+
+static inline int64_t number_trunc_i64(const Number *n, const char *who) {
+    if (!n->is_float) return (int64_t)n->int_value;
+    if (!isfinite(n->float_value)) {
+        coc_log(COC_ERROR, "Runtime error: %s expects a finite number", who);
+        exit(1);
+    }
+    if (n->float_value > (double)LLONG_MAX || n->float_value < (double)LLONG_MIN) {
+        coc_log(COC_ERROR, "Runtime error: %s number out of int64 range", who);
+        exit(1);
+    }
+    return (int64_t)n->float_value;
+}
 
 typedef enum TokenKind{
     tok_eof        = -1,
@@ -631,13 +645,6 @@ static inline void vm_check_labels(VM *vm) {
     }
 }
 
-static inline void act_print(Number *n) {
-    if (n->is_float)
-        printf("%f\n", n->float_value);
-    else
-        printf("%lld\n", n->int_value);
-}
-
 static inline void act_inc(Number *n) {
     if (n->is_float) n->float_value += 1.0;
     else n->int_value += 1;
@@ -646,6 +653,66 @@ static inline void act_inc(Number *n) {
 static inline void act_dec(Number *n) {
     if (n->is_float) n->float_value -= 1.0;
     else n->int_value -= 1;
+}
+
+static inline void act_double(Number *n) {
+    if (n->is_float) n->float_value *= 2;
+    else n->int_value *= 2;
+}
+
+static inline void act_halve(Number *n) {
+    if (n->is_float) n->float_value /= 2;
+    else n->int_value /=2;
+}
+
+static inline void act_neg(Number *n) {
+    if (n->is_float) n->float_value = -n->float_value;
+    else n->int_value = -n->int_value;
+}
+
+static inline void act_abs(Number *n) {
+    if (n->is_float) {
+        n->float_value = fabs(n->float_value);
+        return;
+    }
+    if (n->int_value == LLONG_MIN) {
+        n->is_float = true;
+        n->float_value = 9223372036854775808.0;
+        return;
+    }
+    if (n->int_value < 0) n->int_value = -n->int_value;
+}
+
+static inline void act_not(Number *n) {
+    n->int_value = !number_trunc_i64(n, "not");
+    n->is_float = false;
+}
+
+static inline void act_isodd(Number *n) {
+    long long value = number_trunc_i64(n, "isodd");
+    n->int_value = (long long)((uint64_t)value & 1ull);
+    n->is_float = false;
+}
+
+static inline void act_isneg(Number *n) {
+    long long result;
+    if (n->is_float) {
+        if (isnan(n->float_value)) {
+            coc_log(COC_ERROR, "Runtime error: isneg expects a number (got NaN)");
+            exit(1);
+        }
+        result = (n->float_value < 0.0);
+    } else {
+        result = (n->int_value < 0);
+    }
+    n->int_value = result;
+    n->is_float = false;
+}
+
+static inline void act_toint(Number *n) {
+    if (!n->is_float) return;
+    n->int_value = number_trunc_i64(n, "toint");
+    n->is_float = false;
 }
 
 static inline void act_input(Number *n) {
@@ -707,6 +774,13 @@ static inline void act_input(Number *n) {
     }
 }
 
+static inline void act_print(Number *n) {
+    if (n->is_float)
+        printf("%f\n", n->float_value);
+    else
+        printf("%lld\n", n->int_value);
+}
+
 static inline void act_getc(Number *n) {
     int c = getchar();
     if (c == EOF) {
@@ -745,15 +819,35 @@ static inline void act_puts(Number *n) {
     }
 }
 
+static inline void act_putl(Number *n) {
+    act_puts(n);
+    putchar('\n');
+}
+
+static inline void act_putx(Number *n) {
+    uint64_t value = (uint64_t)number_trunc_i64(n, "putx");
+    printf("%016llx", value);
+}
+
 static inline void register_builtin_actions(VM *vm) {
-    register_act(vm, "inc",   act_inc);
-    register_act(vm, "dec",   act_dec);
-    register_act(vm, "input", act_input);
-    register_act(vm, "print", act_print);
-    register_act(vm, "putc",  act_putc);
-    register_act(vm, "getc",  act_getc);
-    register_act(vm, "puts",  act_puts);
-    register_act(vm, "gets",  act_gets);
+    register_act(vm, "inc"   , act_inc);
+    register_act(vm, "dec"   , act_dec);
+    register_act(vm, "double", act_double);
+    register_act(vm, "halve" , act_halve);
+    register_act(vm, "neg"   , act_neg);
+    register_act(vm, "abs"   , act_abs);
+    register_act(vm, "not"   , act_not);
+    register_act(vm, "isodd" , act_isodd);
+    register_act(vm, "isneg" , act_isneg);
+    register_act(vm, "input" , act_input);
+    register_act(vm, "toint" , act_toint);
+    register_act(vm, "print" , act_print);
+    register_act(vm, "getc"  , act_getc);
+    register_act(vm, "putc"  , act_putc);
+    register_act(vm, "gets"  , act_gets);
+    register_act(vm, "puts"  , act_puts);
+    register_act(vm, "putl"  , act_putl);
+    register_act(vm, "putx"  , act_putx);
 }
 
 static inline VM *run_file(const char *filename, void (*register_user_actions)(VM *)) {
