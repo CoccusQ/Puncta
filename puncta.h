@@ -85,6 +85,15 @@ static inline void skip_comment(Lexer *l) {
     }
 }
 
+static inline bool is_punctuator(char c) {
+    static const char punctuators[] = ",.!?:;";
+    return strchr(punctuators, c) != NULL;
+}
+
+static inline bool is_token_boundary(char c) {
+    return c == '\0' || isspace(c) || is_punctuator(c) || c == '(';
+}
+
 static inline Token lexer_next(Lexer *l) {
     skip_whitespace(l);
     skip_comment(l);
@@ -115,7 +124,7 @@ static inline Token lexer_next(Lexer *l) {
             coc_vec_append(&num, lexer_get(l));
             coc_vec_append(&num, lexer_get(l));
         }
-        while (isdigit(lexer_peek(l)) || (is_hex && isalnum(lexer_peek(l)))) {
+        while (isdigit(lexer_peek(l)) || (is_hex && isxdigit(lexer_peek(l)))) {
             coc_vec_append(&num, lexer_get(l));
         }
         if (!is_hex && lexer_peek(l) == '.' && isdigit(lexer_peek2(l))) {
@@ -124,6 +133,13 @@ static inline Token lexer_next(Lexer *l) {
             while (isdigit(lexer_peek(l))) {
                 coc_vec_append(&num, lexer_get(l));
             }
+        }
+        char next_char = lexer_peek(l);
+        if (!is_token_boundary(next_char)) {
+            coc_log(COC_ERROR, 
+                    "Lexical error at line %d: invalid character '%c' after %s literal",
+                    l->line, next_char, is_float ? "floating-point" : (is_hex ? "hexadecimal integer" : "decimal integer"));
+            exit(1);
         }
         coc_str_append_null(&num);
         char *end_ptr = NULL;
@@ -155,13 +171,13 @@ static inline Token lexer_next(Lexer *l) {
             if (end_ptr == num.items) {
                 coc_log(COC_ERROR,
                         "Lexical error at line %d: invalid %s integer literal",
-                        l->line, is_hex ? "hexical" : "decimal");
+                        l->line, is_hex ? "hexadecimal" : "decimal");
                 exit(1);
             }
             if (errno == ERANGE) {
                 coc_log(COC_ERROR,
                         "Lexical error at line %d: %s integer literal out of range",
-                        l->line, is_hex ? "hexical" : "decimal");
+                        l->line, is_hex ? "hexadecimal" : "decimal");
                 exit(errno);
             }
             return (Token){
@@ -236,8 +252,8 @@ static inline Token lexer_next(Lexer *l) {
             .line = l->line
         };
     }
-    static const char punctuators[] = ",.!?:;";
-    if (strchr(punctuators, c)) {
+    
+    if (is_punctuator(c)) {
         return (Token){.kind = (TokenKind)lexer_get(l), .line = l->line};
     } else {
         Coc_String id = {0};
@@ -328,8 +344,8 @@ static inline Token parser_expect(Parser *p, TokenKind k, const char *msg) {
 }
 
 static inline void parse_statement(Parser *p) {
-    Token first = parser_expect(p, tok_identifier, "the first identifier");
     int line = p->cur_tok.line;
+    Token first = parser_expect(p, tok_identifier, "the first identifier");
     if (parser_accept(p, (TokenKind)':')) {
         Instruction inst = {0};
         inst.op = OP_LABEL;
@@ -386,9 +402,19 @@ static inline void parse_statement(Parser *p) {
                 coc_vec_append(&p->instructions, inst);
                 return;
             }
+            coc_log(COC_ERROR,
+                    "Syntax error at line %d: expected ';' at the end of the statement",
+                    line);
+            exit(1);
         }
 
         if (parser_accept(p, (TokenKind)'!')) {
+            if (second.kind == tok_number) {
+                coc_log(COC_ERROR,
+                        "Syntax error at line %d: expected identifier (action name) before '!', but got number",
+                        line);
+                exit(1);
+            }
             Instruction inst = {0};
             inst.op = OP_ACT;
             inst.OperandA = first.text;
@@ -645,19 +671,19 @@ static inline void act_input(Number *n) {
         if (end_ptr == buf) {
             coc_log(COC_ERROR,
                     "Input error: invalid %s integer literal",
-                    is_hex ? "hexical" : "decimal");
+                    is_hex ? "hexadecimal" : "decimal");
             exit(1);
         }
         if (*end_ptr != '\0' && *end_ptr != '\r' && *end_ptr != '\n') {
             coc_log(COC_ERROR,
                     "Input error: invalid character '%c' in %s integer literal",
-                    *end_ptr, is_hex ? "hexical" : "decimal");
+                    *end_ptr, is_hex ? "hexadecimal" : "decimal");
             exit(1);
         }
         if (errno == ERANGE) {
             coc_log(COC_ERROR,
                     "Input error : %s integer literal out of range",
-                    is_hex ? "hexical" : "decimal");
+                    is_hex ? "hexadecimal" : "decimal");
             exit(errno);
         }
         n->int_value = v;
