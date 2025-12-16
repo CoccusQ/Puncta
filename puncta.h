@@ -615,6 +615,22 @@ static inline void vm_call_label(VM *vm, Coc_String *label) {
     run(vm);
 }
 
+static inline void vm_check_labels(VM *vm) {
+    for (size_t i = 0; i < vm->prog.size; i++) {
+        Instruction *inst = &vm->prog.items[i];
+        if (inst->op != OP_JMP && inst->op != OP_JEQ) continue;
+        int *pos = NULL;
+        coc_ht_find(&vm->labels, &inst->Label, pos);
+        if (pos == NULL) {
+            coc_str_append_null(&inst->Label);
+            coc_log(COC_ERROR,
+                    "Semantic error at line %d: label '%s' not defined",
+                    inst->line, inst->Label.items);
+            exit(1);
+        }
+    }
+}
+
 static inline void act_print(Number *n) {
     if (n->is_float)
         printf("%f\n", n->float_value);
@@ -753,6 +769,7 @@ static inline VM *run_file(const char *filename, void (*register_user_actions)(V
         coc_log(COC_INFO, "Register user actions");
         register_user_actions(vm);
     }
+    vm_check_labels(vm);
     run(vm);
     return vm;
 }
