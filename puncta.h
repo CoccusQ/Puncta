@@ -64,14 +64,23 @@ static inline void skip_whitespace(Lexer *l) {
 }
 
 static inline void skip_comment(Lexer *l) {
-    while (lexer_peek(l) == '(') {
-        l->pos++;
-        while (lexer_peek(l) && lexer_peek(l) != ')') {
-            if (lexer_peek(l) == '\n') l->line++;
-            l->pos++;
+    while (true) {
+        if (lexer_peek(l) != '(') return;
+        int start_line = l->line;
+        int depth = 1;
+        lexer_get(l);
+        while (depth > 0) {
+            switch (lexer_get(l)) {
+            case '(': depth++; break;
+            case ')': depth--; break;
+            case '\n': l->line++; break;
+            case '\0':
+                coc_log(COC_ERROR,
+                        "Lexical error at line %d: unterminated comment",
+                        start_line);
+                exit(1);
+            }
         }
-        if (lexer_peek(l) == ')') l->pos++;
-        else break;
         skip_whitespace(l);
     }
 }
@@ -80,6 +89,12 @@ static inline Token lexer_next(Lexer *l) {
     skip_whitespace(l);
     skip_comment(l);
     char c = lexer_peek(l);
+    if (c == ')') {
+        coc_log(COC_ERROR,
+                "Lexical error at line %d: unmatched ')'",
+                l->line);
+        exit(1);
+    }
     if (c == '\0') return (Token){.kind = tok_eof, .line = l->line};
     if (isalpha(c) || c == '_') {
         Coc_String id = {0};
