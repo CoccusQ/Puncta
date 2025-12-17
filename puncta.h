@@ -3,6 +3,7 @@
 #include <math.h>
 #include <limits.h>
 #include "coc.h"
+#include "puncta_eval.h"
 
 typedef struct Number {
     long long int_value;
@@ -10,17 +11,41 @@ typedef struct Number {
     bool is_float;
 } Number;
 
-static inline int64_t number_trunc_i64(const Number *n, const char *who) {
+static inline int64_t number_trunc_i64(const Number *n, const char *who, int line) {
     if (!n->is_float) return (int64_t)n->int_value;
     if (!isfinite(n->float_value)) {
-        coc_log(COC_ERROR, "Runtime error: %s expects a finite number", who);
+        coc_log(COC_ERROR, "Runtime error at line %d: in action '%s': expects a finite number", line, who);
         exit(1);
     }
     if (n->float_value > (double)LLONG_MAX || n->float_value < (double)LLONG_MIN) {
-        coc_log(COC_ERROR, "Runtime error: %s number out of int64 range", who);
+        coc_log(COC_ERROR, "Runtime error at line %d: in action '%s' number out of int64 range", line, who);
         exit(1);
     }
     return (int64_t)n->float_value;
+}
+
+static inline size_t number_to_string(const Number *n, char *buf, size_t buf_size, const char *who, int line) {
+    if (n->is_float) {
+        coc_log(COC_ERROR, 
+                "Runtime error at line %d: in action '%s': cannot treat a floating-point value as a string (packed int64 required); got float=%g",
+               line, who, n->float_value);
+        exit(1);
+    }
+    uint64_t value = (uint64_t)n->int_value;
+    size_t len = 0;
+    for (int i = 7; i >= 0; i--) {
+        unsigned char c = (value >> (i * 8)) & 0xFF;
+        if (c == '\0') break;
+        if (len >= buf_size) {
+            coc_log(COC_ERROR,
+                    "Runtime error at line %d: in action '%s': buffer too small for number-to-string conversion (need %zu bytes at least, have %zu)",
+                    line, who, len + 1, buf_size);
+            exit(1);
+        }
+        buf[len++] = c;
+    }
+    buf[len] = '\0';
+    return len;
 }
 
 typedef enum TokenKind{
@@ -468,7 +493,9 @@ typedef struct VarHashTable {
     size_t capacity;
 } VarHashTable;
 
-typedef void (*Action)(Number *);
+typedef struct VM VM;
+
+typedef void (*Action)(VM *vm, Number *);
 
 typedef struct ActEntry {
     Coc_String key;
@@ -483,13 +510,13 @@ typedef struct ActHashTable {
     size_t capacity;
 } ActHashTable;
 
-typedef struct VM {
+struct VM {
     Program prog;
     LabelHashTable labels;
     VarHashTable vars;
     ActHashTable acts;
     int pc;
-} VM;
+};
 
 static inline VM *vm_init(Parser *p) {
     VM *vm = (VM *)COC_MALLOC(sizeof(VM));
@@ -516,13 +543,17 @@ static inline void register_act(VM *vm, const char *name, Action act) {
     coc_ht_insert_move(&vm->acts, &act_name, act);
 }
 
+static inline int vm_get_line_number(VM *vm) {
+    return vm->prog.items[vm->pc].line;
+}
+
 static inline Number *vm_get_var(VM *vm, Coc_String *var_name) {
     Number *value = NULL;
     coc_ht_find(&vm->vars, var_name, value);
     if (value == NULL) {
         coc_str_append_null(var_name);
         coc_log(COC_ERROR, "Runtime error at line %d: variable '%s' not found",
-                vm->prog.items[vm->pc].line, var_name->items);
+                vm_get_line_number(vm), var_name->items);
         exit(1);
     }
     return value;
@@ -534,7 +565,7 @@ static inline Action *vm_get_action(VM *vm, Coc_String *act_name) {
     if (act == NULL) {
         coc_str_append_null(act_name);
         coc_log(COC_ERROR, "Runtime error at line %d: action '%s' not found",
-                vm->prog.items[vm->pc].line, act_name->items);
+                vm_get_line_number(vm), act_name->items);
         exit(1);
     }
     return act;
@@ -546,7 +577,7 @@ static inline int vm_get_label(VM *vm, Coc_String *label) {
     if (pos == NULL) {
         coc_str_append_null(label);
         coc_log(COC_ERROR, "Runtime error at line %d: label '%s' not found",
-                vm->prog.items[vm->pc].line, label->items);
+                vm_get_line_number(vm), label->items);
         exit(1);
     }
     return *pos;
@@ -563,7 +594,7 @@ static inline void vm_assign(VM *vm, Instruction *inst) {
 static inline void vm_act(VM *vm, Instruction *inst) {
     Number *a = vm_get_var(vm, &inst->OperandA);
     Action *act = vm_get_action(vm, &inst->OperandB);
-    (*act)(a);
+    (*act)(vm, a);
     vm->pc++;
 }
 
@@ -578,7 +609,7 @@ static inline void vm_jeq(VM *vm, Instruction *inst) {
     if (inst->is_B_number) b = &inst->number;
     else b = vm_get_var(vm, &inst->OperandB);
     bool cond = false;
-    double eps = 1e-9;
+    const double eps = 1e-9;
     if (a->is_float == b->is_float) {
         if (a->is_float)
             cond = fabs(a->float_value - b->float_value) < eps;
@@ -645,32 +676,32 @@ static inline void vm_check_labels(VM *vm) {
     }
 }
 
-static inline void act_inc(Number *n) {
+static inline void act_inc(VM *vm, Number *n) {
     if (n->is_float) n->float_value += 1.0;
     else n->int_value += 1;
 }
 
-static inline void act_dec(Number *n) {
+static inline void act_dec(VM *vm, Number *n) {
     if (n->is_float) n->float_value -= 1.0;
     else n->int_value -= 1;
 }
 
-static inline void act_double(Number *n) {
+static inline void act_double(VM *vm, Number *n) {
     if (n->is_float) n->float_value *= 2;
     else n->int_value *= 2;
 }
 
-static inline void act_halve(Number *n) {
+static inline void act_halve(VM *vm, Number *n) {
     if (n->is_float) n->float_value /= 2;
     else n->int_value /=2;
 }
 
-static inline void act_neg(Number *n) {
+static inline void act_neg(VM *vm, Number *n) {
     if (n->is_float) n->float_value = -n->float_value;
     else n->int_value = -n->int_value;
 }
 
-static inline void act_abs(Number *n) {
+static inline void act_abs(VM *vm, Number *n) {
     if (n->is_float) {
         n->float_value = fabs(n->float_value);
         return;
@@ -683,22 +714,24 @@ static inline void act_abs(Number *n) {
     if (n->int_value < 0) n->int_value = -n->int_value;
 }
 
-static inline void act_not(Number *n) {
-    n->int_value = !number_trunc_i64(n, "not");
+static inline void act_not(VM *vm, Number *n) {
+    n->int_value = !number_trunc_i64(n, "not", vm_get_line_number(vm));
     n->is_float = false;
 }
 
-static inline void act_isodd(Number *n) {
-    long long value = number_trunc_i64(n, "isodd");
+static inline void act_isodd(VM *vm, Number *n) {
+    long long value = number_trunc_i64(n, "isodd", vm_get_line_number(vm));
     n->int_value = (long long)((uint64_t)value & 1ull);
     n->is_float = false;
 }
 
-static inline void act_isneg(Number *n) {
+static inline void act_isneg(VM *vm, Number *n) {
     long long result;
     if (n->is_float) {
         if (isnan(n->float_value)) {
-            coc_log(COC_ERROR, "Runtime error: isneg expects a number (got NaN)");
+            coc_log(COC_ERROR, 
+                    "Runtime error at line %d: isneg expects a number (got NaN)",
+                    vm_get_line_number(vm));
             exit(1);
         }
         result = (n->float_value < 0.0);
@@ -709,13 +742,13 @@ static inline void act_isneg(Number *n) {
     n->is_float = false;
 }
 
-static inline void act_toint(Number *n) {
+static inline void act_toint(VM *vm, Number *n) {
     if (!n->is_float) return;
-    n->int_value = number_trunc_i64(n, "toint");
+    n->int_value = number_trunc_i64(n, "toint", vm_get_line_number(vm));
     n->is_float = false;
 }
 
-static inline void act_input(Number *n) {
+static inline void act_input(VM *vm, Number *n) {
     char buf[128];
     if (!fgets(buf, sizeof(buf), stdin)) {
         coc_log(COC_FATAL, "Input error: fgets() failed");
@@ -774,14 +807,12 @@ static inline void act_input(Number *n) {
     }
 }
 
-static inline void act_print(Number *n) {
-    if (n->is_float)
-        printf("%f\n", n->float_value);
-    else
-        printf("%lld\n", n->int_value);
+static inline void act_print(VM *vm, Number *n) {
+    if (n->is_float) printf("%g\n", n->float_value);
+    else printf("%lld\n", n->int_value);
 }
 
-static inline void act_getc(Number *n) {
+static inline void act_getc(VM *vm, Number *n) {
     int c = getchar();
     if (c == EOF) {
         coc_log(COC_FATAL, "Input error: getchar() failed");
@@ -792,12 +823,12 @@ static inline void act_getc(Number *n) {
     while ((c = getchar()) != '\n' && c != EOF);
 }
 
-static inline void act_putc(Number *n) {
+static inline void act_putc(VM *vm, Number *n) {
     int value = n->is_float ? (int)n->float_value : (int)n->int_value;
     putchar(value);
 }
 
-static inline void act_gets(Number *n) {
+static inline void act_gets(VM *vm, Number *n) {
     char buf[10];
     if (!fgets(buf, sizeof(buf), stdin)) {
         coc_log(COC_FATAL, "Input error: fgets() failed");
@@ -811,22 +842,40 @@ static inline void act_gets(Number *n) {
     n->is_float = false;
 }
 
-static inline void act_puts(Number *n) {
-    uint64_t value = n->is_float ? (uint64_t)n->float_value : (uint64_t)n->int_value;
-    for (int i = 7; i >= 0; i--) {
-        unsigned char c = (value >> (i * 8)) & 0xFF;
-        if (c != '\0') putchar(c);
-    }
+static inline void act_puts(VM *vm, Number *n) {
+    char buf[16];
+    number_to_string(n, buf, sizeof(buf), "puts", vm_get_line_number(vm));
+    printf("%s", buf);
 }
 
-static inline void act_putl(Number *n) {
-    act_puts(n);
-    putchar('\n');
+static inline void act_putl(VM *vm, Number *n) {
+    char buf[16];
+    number_to_string(n, buf, sizeof(buf), "putl", vm_get_line_number(vm));
+    puts(buf);
 }
 
-static inline void act_putx(Number *n) {
-    uint64_t value = (uint64_t)number_trunc_i64(n, "putx");
+static inline void act_putx(VM *vm, Number *n) {
+    uint64_t value = (uint64_t)number_trunc_i64(n, "putx", vm_get_line_number(vm));
     printf("%016llx", value);
+}
+
+static inline void act_eval(VM *vm, Number *n) {
+    double vars[52];
+    char expr[EVAL_EXPR_MAX + 2];
+    int len = number_to_string(n, expr, sizeof(expr), "eval", vm_get_line_number(vm));
+    Coc_String var_name = {0};
+    for (int i = 0; i < len; i++) {
+        char c = expr[i];
+        if (isalpha(c)) {
+            var_name.size = 0;
+            coc_vec_append(&var_name, c);
+            Number *value = vm_get_var(vm, &var_name);
+            int idx = isupper(c) ? c - 'A' : c - 'a' + 26;
+            vars[idx] = value->is_float ? value->float_value : (double)value->int_value;
+        }
+    }
+    n->float_value = eval_run(expr, vars);
+    n->is_float = true;
 }
 
 static inline void register_builtin_actions(VM *vm) {
@@ -848,6 +897,7 @@ static inline void register_builtin_actions(VM *vm) {
     register_act(vm, "puts"  , act_puts);
     register_act(vm, "putl"  , act_putl);
     register_act(vm, "putx"  , act_putx);
+    register_act(vm, "eval"  , act_eval);
 }
 
 static inline VM *run_file(const char *filename, void (*register_user_actions)(VM *)) {
