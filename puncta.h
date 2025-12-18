@@ -33,7 +33,7 @@ static inline size_t number_to_string(const Number *n, char *buf, size_t buf_siz
     }
     uint64_t value = (uint64_t)n->int_value;
     size_t len = 0;
-    for (int i = 7; i >= 0; i--) {
+    for (int i = 0; i <= 7; i++) {
         unsigned char c = (value >> (i * 8)) & 0xFF;
         if (c == '\0') break;
         if (len >= buf_size) {
@@ -271,8 +271,7 @@ static inline Token lexer_next(Lexer *l) {
                     exit(1);
                 }
             }
-            value = (value << 8) | (uint64_t)ch;
-            len++;
+            value |= (uint64_t)ch << ((len++) * 8);
         }
         if (lexer_peek(l) != '"') {
             coc_log(COC_ERROR, 
@@ -280,7 +279,6 @@ static inline Token lexer_next(Lexer *l) {
                     l->line);
             exit(1);
         }
-        value <<= (8 - len) * 8;
         lexer_get(l);
         return (Token){
             .kind = tok_number,
@@ -829,7 +827,7 @@ static inline void act_getc(VM *vm, Number *n) {
 }
 
 static inline void act_putc(VM *vm, Number *n) {
-    int value = n->is_float ? (int)n->float_value : (int)n->int_value;
+    int value = number_trunc_i64(n, "putc", vm_get_line_number(vm));
     putchar(value);
 }
 
