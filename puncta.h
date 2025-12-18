@@ -868,7 +868,12 @@ static inline void act_eval(VM *vm, Number *n) {
     double vars[52];
     char expr[EVAL_EXPR_MAX + 2];
     int len = number_to_string(n, expr, sizeof(expr), "eval", vm_get_line_number(vm));
-    Coc_String var_name = {0};
+    char buf[8];
+    Coc_String var_name = {
+        .capacity = sizeof(buf),
+        .items = buf,
+        .size = 0
+    };
     for (int i = 0; i < len; i++) {
         char c = expr[i];
         if (isalpha(c)) {
@@ -880,7 +885,7 @@ static inline void act_eval(VM *vm, Number *n) {
         }
     }
     char ctx[64];
-    sprintf(ctx, "Runtime error at line %d: ", vm_get_line_number(vm));
+    snprintf(ctx, sizeof(ctx), "Runtime error at line %d: ", vm_get_line_number(vm));
     n->float_value = eval_run(expr, vars, ctx);
     n->is_float = true;
 }
