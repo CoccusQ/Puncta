@@ -812,6 +812,11 @@ static inline void act_print(VM *vm, Number *n) {
     else printf("%lld\n", n->int_value);
 }
 
+static inline void act_putn(VM *vm, Number *n) {
+    if (n->is_float) printf("%g", n->float_value);
+    else printf("%lld", n->int_value);
+}
+
 static inline void act_getc(VM *vm, Number *n) {
     int c = getchar();
     if (c == EOF) {
@@ -874,7 +879,9 @@ static inline void act_eval(VM *vm, Number *n) {
             vars[idx] = value->is_float ? value->float_value : (double)value->int_value;
         }
     }
-    n->float_value = eval_run(expr, vars);
+    char ctx[64];
+    sprintf(ctx, "Runtime error at line %d: ", vm_get_line_number(vm));
+    n->float_value = eval_run(expr, vars, ctx);
     n->is_float = true;
 }
 
@@ -891,6 +898,7 @@ static inline void register_builtin_actions(VM *vm) {
     register_act(vm, "input" , act_input);
     register_act(vm, "toint" , act_toint);
     register_act(vm, "print" , act_print);
+    register_act(vm, "putn"  , act_putn);
     register_act(vm, "getc"  , act_getc);
     register_act(vm, "putc"  , act_putc);
     register_act(vm, "gets"  , act_gets);
