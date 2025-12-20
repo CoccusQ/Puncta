@@ -1,9 +1,9 @@
-// coc.h - version 1.0.1 (2025-12-08)
+// coc.h - version 1.1.1 (2025-12-20)
 #ifndef COC_H_
 #define COC_H_
 
 #define COC_VERSION_MAJOR 1
-#define COC_VERSION_MINOR 0
+#define COC_VERSION_MINOR 1
 #define COC_VERSION_PATCH 1
 
 #include <stdio.h>
@@ -25,9 +25,15 @@ typedef enum Coc_Log_Level {
     COC_FATAL
 } Coc_Log_Level;
 
-#define COC_LOG_LEVEL_GLOBAL COC_WARNING
-#define COC_LOG_TIME_ENABLE  1
-#define COC_LOG_FILE_ENABLE  0
+typedef struct Coc_Log_Config {
+    Coc_Log_Level g_coc_log_level;
+    bool enable_time;
+    bool enable_file_line;
+    FILE *output;
+} Coc_Log_Config;
+
+extern Coc_Log_Config coc_log_config;
+
 #define COC_LOG_OUTPUT       stderr
 
 #define COC_MALLOC           malloc
@@ -40,43 +46,79 @@ typedef enum Coc_Log_Level {
 #define COC_HT_LOAD_FACTOR   0.75f
 
 #define coc_log(level, ...) do {                                            \
-    if (COC_LOG_LEVEL_GLOBAL > level) break;                                \
+    if (coc_log_config.g_coc_log_level > level) break;                    \
     time_t now = time(NULL);                                                \
     char __coc_time_buf[32];                                                \
-    if (COC_LOG_TIME_ENABLE) {                                              \
+    if (coc_log_config.enable_time) {                                     \
         strftime(__coc_time_buf, sizeof(__coc_time_buf),                    \
                  "%Y-%m-%d %H:%M:%S", localtime(&now));                     \
-        fprintf(COC_LOG_OUTPUT, "[%s] ", __coc_time_buf);                   \
+        fprintf(coc_log_config.output, "[%s] ", __coc_time_buf);          \
     }                                                                       \
     switch (level) {                                                        \
     case COC_DEBUG:                                                         \
-        fprintf(COC_LOG_OUTPUT, "[DEBUG] ");                                \
+        fprintf(coc_log_config.output, "[DEBUG] ");                       \
         break;                                                              \
     case COC_INFO:                                                          \
-        fprintf(COC_LOG_OUTPUT, "[INFO] ");                                 \
+        fprintf(coc_log_config.output, "[INFO] ");                        \
         break;                                                              \
     case COC_WARNING:                                                       \
-        fprintf(COC_LOG_OUTPUT, "[WARNING] ");                              \
+        fprintf(coc_log_config.output, "[WARNING] ");                     \
         break;                                                              \
     case COC_ERROR:                                                         \
-        fprintf(COC_LOG_OUTPUT, "[ERROR] ");                                \
+        fprintf(coc_log_config.output, "[ERROR] ");                       \
         break;                                                              \
     case COC_FATAL:                                                         \
-        fprintf(COC_LOG_OUTPUT, "[FATAL] ");                                \
+        fprintf(coc_log_config.output, "[FATAL] ");                       \
         break;                                                              \
     default:                                                                \
         break;                                                              \
     }                                                                       \
-    if (COC_LOG_FILE_ENABLE)                                                \
-        fprintf(stderr, "(%s:%d) ", __FILE__, __LINE__);                    \
-    fprintf(COC_LOG_OUTPUT, __VA_ARGS__);                                   \
-    fprintf(COC_LOG_OUTPUT, "\n");                                          \
+    if (coc_log_config.enable_file_line)                                  \
+        fprintf(coc_log_config.output, "(%s:%d) ", __FILE__, __LINE__);   \
+    fprintf(coc_log_config.output, __VA_ARGS__);                          \
+    fprintf(coc_log_config.output, "\n");                                 \
 } while(0)
 
-#define coc_log_raw(level, ...) do {         \
-    if (COC_LOG_LEVEL_GLOBAL > level) break; \
-    fprintf(COC_LOG_OUTPUT, __VA_ARGS__);    \
+#define coc_log_raw(level, ...) do {                     \
+    if (coc_log_config.g_coc_log_level > level) break; \
+    fprintf(coc_log_config.output, __VA_ARGS__);       \
 }  while (0)
+
+static inline void coc_log_init(
+    Coc_Log_Level global_level,
+    bool enable_time,
+    bool enable_file_line,
+    const char *logfilename
+) {
+    coc_log_config.g_coc_log_level = global_level;
+    coc_log_config.enable_time = enable_time;
+    coc_log_config.enable_file_line = enable_file_line;
+    coc_log_config.output = COC_LOG_OUTPUT;
+    if (logfilename) {
+        FILE *fp = fopen(logfilename, "w+");
+        if (fp == NULL) {
+            coc_log(COC_FATAL, "cannot write file %s: %s", logfilename, strerror(errno));
+            exit(errno);
+        }
+        coc_log_config.output = fp;
+    } 
+}
+
+static inline void coc_log_close() {
+    FILE *output = coc_log_config.output;
+    if (output && output != COC_LOG_OUTPUT) fclose(output);
+    coc_log_config.output = COC_LOG_OUTPUT;
+}
+
+static inline void coc_log_reopen(const char *logfilename) {
+    coc_log_close();
+    FILE *fp = fopen(logfilename, "w+");
+    if (fp == NULL) {
+        coc_log(COC_FATAL, "cannot write file %s: %s", logfilename, strerror(errno));
+        exit(errno);
+    }
+    coc_log_config.output = fp;
+}
 
 // Vec format:
 // typedef struct Vec {
@@ -300,10 +342,6 @@ static inline uint32_t coc_hash_fnv1a(Coc_String *key) {
 #define coc_ht_find(ht, k, v_ptr) do {                                        \
     COC_ASSERT((ht) != NULL);                                                 \
     COC_ASSERT((k) != NULL);                                                  \
-    if ((ht)->size == 0) {                                                    \
-        (v_ptr) = NULL;                                                       \
-        break;                                                                \
-    }                                                                         \
     uint32_t idx = coc_hash_value(k) % (ht)->capacity;                        \
     for (size_t i = 0; i < (ht)->capacity; i++) {                             \
         if (!(ht)->items[idx].is_used) {                                      \
