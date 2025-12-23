@@ -1,9 +1,9 @@
-// coc.h - version 1.1.1 (2025-12-20)
+// coc.h - version 1.3.1 (2025-12-20)
 #ifndef COC_H_
 #define COC_H_
 
 #define COC_VERSION_MAJOR 1
-#define COC_VERSION_MINOR 1
+#define COC_VERSION_MINOR 3
 #define COC_VERSION_PATCH 1
 
 #include <stdio.h>
@@ -123,22 +123,14 @@ static inline void coc_log_reopen(const char *logfilename) {
     coc_log_config.output = fp;
 }
 
-static inline Coc_Log_Level coc_log_level_from_cstr(const char *s) {
-    if (s == NULL) return COC_LOG_LEVEL_GLOBAL;
-    if (strcmp("COC_DEBUG", s) == 0) {
-        return COC_DEBUG;
-    } else if (strcmp("COC_INFO", s) == 0) {
-        return COC_INFO;
-    } else if (strcmp("COC_WARNING", s) == 0) {
-        return COC_WARNING;
-    } else if (strcmp("COC_ERROR", s) == 0) {
-        return COC_ERROR;
-    } else if (strcmp("COC_FATAL", s) == 0) {
-        return COC_FATAL;
-    } else {
-        coc_log_raw(COC_ERROR, "Arg Parser: invalid log level %s", s);
-        exit(1);
-    }
+static inline Coc_Log_Level coc_log_level_from_cstr(const char *cstr) {
+    if (cstr == NULL) return COC_LOG_LEVEL_GLOBAL;
+    if (strcmp("debug"  , cstr) == 0) return COC_DEBUG;
+    if (strcmp("info"   , cstr) == 0) return COC_INFO;
+    if (strcmp("warning", cstr) == 0) return COC_WARNING;
+    if (strcmp("error"  , cstr) == 0) return COC_ERROR;
+    if (strcmp("fatal"  , cstr) == 0) return COC_FATAL;
+    return COC_LOG_LEVEL_GLOBAL;
 }
 
 // Vec format:
@@ -406,154 +398,22 @@ static inline uint32_t coc_hash_fnv1a(Coc_String *key) {
     (ht)->capacity = 0;                           \
 } while (0)
 
-typedef struct Coc_ArgEntry {
-    Coc_String key;
-    Coc_String value;
-    bool is_used;
-} Coc_ArgEntry;
-
-typedef struct Coc_ArgHashTable {
-    Coc_ArgEntry *items;
-    Coc_ArgEntry *new_items;
-    size_t size;
-    size_t capacity;
-} Coc_ArgHashTable;
-
-typedef struct Coc_ArgVec {
-    Coc_String *items;
-    size_t size;
-    size_t capacity;
-} Coc_ArgVec;
-
-typedef struct Coc_ArgParser {
-    char *short_opts[52];
-    Coc_ArgHashTable ht;
-    Coc_ArgVec vec;
-} Coc_ArgParser;
-
-static inline void coc_argparser_free(Coc_ArgParser *p) {
-    COC_ASSERT(p != NULL);
-    for (int i = 0; i < 52; i++) {
-        if (p->short_opts[i]) COC_FREE(p->short_opts[i]);
-        p->short_opts[i] = NULL;
-    }
-    Coc_ArgHashTable *ht = &p->ht;
-    if (ht->items != NULL) {
-        for (size_t i = 0; i < ht->capacity; i++) {
-            if (ht->items->is_used) {
-                coc_str_free(&ht->items[i].key);
-                coc_str_free(&ht->items[i].value);
-            }
-        }
-        COC_FREE(ht->items);
-    }
-    ht->items = NULL;
-    ht->new_items = NULL;
-    ht->capacity = 0;
-    ht->size = 0;
-    Coc_ArgVec *vec  = &p->vec;
-    if (vec->items != NULL) {
-        for (size_t i = 0; i < vec->size; i++)
-            coc_str_free(&vec->items[i]);
-        COC_FREE(vec->items);
-    }
-    vec->items = NULL;
-    vec->capacity = 0;
-    vec->size = 0;
-}
-
-static inline int coc_map_short_opt(char opt) {
-    if (isupper(opt)) return opt - 'A';
-    else if (islower(opt)) return opt - 'a' + 26;
-    else {
-        coc_log_raw(COC_ERROR,
-                "Arg Parser: invalid short option '-%c': short options must be [A-Za-z]",
-                opt);
-        exit(1);
-    }
-}
-
-static inline void coc_argparser_set_short_opt(Coc_ArgParser *p, char opt, const char *value) {
-    COC_ASSERT(p != NULL);
-    if (value) p->short_opts[coc_map_short_opt(opt)] = strdup(value);
-}
-
-static inline char *coc_argparser_get_short_opt(Coc_ArgParser *p, char opt) {
-    COC_ASSERT(p != NULL);
-    return p->short_opts[coc_map_short_opt(opt)];
-}
-
-static inline void coc_argparser_parse(Coc_ArgParser *p, int argc, char *argv[]) {
-    COC_ASSERT(p != NULL);
-    for (int i = 1; i < argc; i++) {
-        if (argv[i][0] == '-') {
-            if (argv[i][1] == '-') {
-                char *eq_pos = strchr(argv[i], '=');
-                Coc_String key = {0};
-                Coc_String value = {0};
-                if (eq_pos) {
-                    *eq_pos = '\0';
-                    coc_str_append(&key, argv[i] + 2);
-                    coc_str_append(&value, eq_pos + 1);
-                } else coc_str_append(&key, argv[i] + 2);
-                coc_ht_insert_move(&p->ht, &key, value);
-                value.items = NULL;
-                value.capacity = 0;
-                value.size = 0;
-            } else {
-                for (int j = 1; argv[i][j] != '\0'; j++) {
-                    char opt = argv[i][j];
-                    if (i + 1 < argc && argv[i + 1][0] != '-') {
-                        coc_argparser_set_short_opt(p, opt, argv[++i]);
-                        break;
-                    }
-                    else coc_argparser_set_short_opt(p, opt, "true");
-                }
-            }
-        } else {
-            Coc_String pos_arg = {0};
-            coc_str_append(&pos_arg, argv[i]);
-            coc_vec_append(&p->vec, pos_arg);
-            pos_arg.items = NULL;
-            pos_arg.capacity = 0;
-            pos_arg.size = 0;
-        }
-    }
-}
-
-static inline char *coc_argparser_get(Coc_ArgParser *p, const char *key) {
-    COC_ASSERT(p != NULL);
-    COC_ASSERT(key != NULL);
-    if (key[0] == '-') {
-        if (key[1] == '-') {
-            Coc_String *value = NULL;
-            coc_ht_find_cstr(&p->ht, key + 2, value);
-            if (value == NULL) return NULL;
-            if (value->items) coc_str_append_null(value);
-            return value->items;
-        } else return p->short_opts[coc_map_short_opt(key[1])];
+static inline size_t coc_kv_split(const char *arg, const char **value) {
+    COC_ASSERT(arg != NULL);
+    COC_ASSERT(value != NULL);
+    const char *eq = strchr(arg, '=');
+    if (eq && eq != arg) {
+        *value = eq + 1;
+        return (size_t)(eq - arg);
     } else {
-        errno = 0;
-        char *end_ptr = NULL;
-        int pos = strtol(key, &end_ptr, 10) - 1;
-        if (end_ptr == key) {
-            coc_log_raw(COC_ERROR, "Arg Parser: invalid arg pos");
-            exit(1);
-        }
-        if (*end_ptr != '\0' && *end_ptr != '\r' && *end_ptr != '\n') {
-            coc_log_raw(COC_ERROR,
-                    "Arg Parser: invalid character '%c' in arg pos",
-                    *end_ptr);
-            exit(1);
-        }
-        if (errno == ERANGE) {
-            coc_log_raw(COC_ERROR, "Arg Parser: arg pos out of range");
-            exit(errno);
-        }
-        if (pos < 0 || pos >= (int)p->vec.size) return NULL;
-        if (p->vec.items[pos].items) coc_str_append_null(&p->vec.items[pos]);
-        return p->vec.items[pos].items;
+        *value = NULL;
+        return 0;
     }
+}
+
+static inline bool coc_kv_match(const char *arg, size_t arg_len, const char *option) {
+    size_t opt_len = strlen(option);
+    return arg_len == opt_len && strncmp(arg, option, opt_len) == 0;
 }
 
 #endif
