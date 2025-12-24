@@ -1,10 +1,10 @@
-// coc.h - version 1.3.1 (2025-12-20)
+// coc.h - version 1.3.2 (2025-12-25)
 #ifndef COC_H_
 #define COC_H_
 
 #define COC_VERSION_MAJOR 1
 #define COC_VERSION_MINOR 3
-#define COC_VERSION_PATCH 1
+#define COC_VERSION_PATCH 2
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,14 +15,15 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <ctype.h>
+#include <stdarg.h>
 
 typedef enum Coc_Log_Level {
-    COC_NONE,
     COC_DEBUG,
     COC_INFO,
     COC_WARNING,
     COC_ERROR,
-    COC_FATAL
+    COC_FATAL,
+    COC_NONE
 } Coc_Log_Level;
 
 typedef struct Coc_Log_Config {
@@ -46,44 +47,43 @@ extern Coc_Log_Config coc_log_config;
 #define COC_HT_INIT_CAP      16
 #define COC_HT_LOAD_FACTOR   0.75f
 
-#define coc_log(level, ...) do {                                            \
-    if (coc_log_config.g_coc_log_level > level) break;                    \
-    time_t now = time(NULL);                                                \
-    char __coc_time_buf[32];                                                \
-    if (coc_log_config.enable_time) {                                     \
-        strftime(__coc_time_buf, sizeof(__coc_time_buf),                    \
-                 "%Y-%m-%d %H:%M:%S", localtime(&now));                     \
-        fprintf(coc_log_config.output, "[%s] ", __coc_time_buf);          \
-    }                                                                       \
-    switch (level) {                                                        \
-    case COC_DEBUG:                                                         \
-        fprintf(coc_log_config.output, "[DEBUG] ");                       \
-        break;                                                              \
-    case COC_INFO:                                                          \
-        fprintf(coc_log_config.output, "[INFO] ");                        \
-        break;                                                              \
-    case COC_WARNING:                                                       \
-        fprintf(coc_log_config.output, "[WARNING] ");                     \
-        break;                                                              \
-    case COC_ERROR:                                                         \
-        fprintf(coc_log_config.output, "[ERROR] ");                       \
-        break;                                                              \
-    case COC_FATAL:                                                         \
-        fprintf(coc_log_config.output, "[FATAL] ");                       \
-        break;                                                              \
-    default:                                                                \
-        break;                                                              \
-    }                                                                       \
-    if (coc_log_config.enable_file_line)                                  \
-        fprintf(coc_log_config.output, "(%s:%d) ", __FILE__, __LINE__);   \
-    fprintf(coc_log_config.output, __VA_ARGS__);                          \
-    fprintf(coc_log_config.output, "\n");                                 \
-} while(0)
+static inline void coc_log_core(int level, const char *fmt, va_list args) {
+    if (coc_log_config.g_coc_log_level > level) return;
+    time_t now = time(NULL);
+    char buf[32];
+    if (coc_log_config.enable_time) {
+        strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", localtime(&now));
+        fprintf(coc_log_config.output, "[%s] ", buf);
+    }
+    const char *tag = "";
+    switch (level) {
+    case COC_DEBUG  : tag = "DEBUG"  ; break;
+    case COC_INFO   : tag = "INFO"   ; break;
+    case COC_WARNING: tag = "WARNING"; break;
+    case COC_ERROR  : tag = "ERROR"  ; break;
+    case COC_FATAL  : tag = "FATAL"  ; break;
+    default: break;
+    }
+    fprintf(coc_log_config.output, "[%s] ", tag);
+    if (coc_log_config.enable_file_line)
+        fprintf(coc_log_config.output, "(%s:%d) ", __FILE__, __LINE__);
+    vfprintf(coc_log_config.output, fmt, args);
+    fprintf(coc_log_config.output, "\n");
+    fflush(coc_log_config.output);
+}
+
+static inline void coc_log(Coc_Log_Level level, const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    coc_log_core((int)level, fmt, args);
+    va_end(args);
+}
 
 #define coc_log_raw(level, ...) do {                   \
     if (COC_LOG_LEVEL_GLOBAL > level) break;           \
     fprintf(COC_LOG_OUTPUT, __VA_ARGS__);              \
     fprintf(COC_LOG_OUTPUT, "\n");                     \
+    fflush(COC_LOG_OUTPUT);                            \
 }  while (0)
 
 static inline void coc_log_init(
