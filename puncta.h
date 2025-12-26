@@ -125,7 +125,7 @@ static inline void skip_comment(Lexer *l) {
 }
 
 static inline bool is_punctuator(char c) {
-    static const char punctuators[] = ",.!?:;@";
+    static const char punctuators[] = ",.!?:;@#";
     return strchr(punctuators, c) != NULL;
 }
 
@@ -357,6 +357,11 @@ static inline void parser_free(Parser *p) {
     COC_FREE(p);
 }
 
+static inline void parser_error(const char *msg, int line) {
+    coc_log(COC_ERROR, "Syntax error at line %d: expected %s", line, msg);
+    exit(1);
+}
+
 static inline void parser_next(Parser *p) {
     p->cur_tok = lexer_next(p->lex);
 }
@@ -370,11 +375,7 @@ static inline bool parser_accept(Parser *p, TokenKind k) {
 }
 
 static inline Token parser_expect(Parser *p, TokenKind k, const char *msg) {
-    if (p->cur_tok.kind != k) {
-        coc_log(COC_ERROR, "Syntax error at line %d: expected %s",
-                p->cur_tok.line, msg);
-        exit(1);
-    }
+    if (p->cur_tok.kind != k) parser_error(msg, p->cur_tok.line);
     Token t = p->cur_tok;
     parser_next(p);
     return t;
@@ -394,6 +395,24 @@ static inline void parse_statement(Parser *p) {
         inst.line = line;
         coc_vec_append(&p->instructions, inst);
         return;
+    }
+    if (parser_accept(p, (TokenKind)'#')) {
+	if (parser_accept(p, (TokenKind)':')) {
+	    Instruction end = {0};
+	    end.op = OP_JMP;
+	    end.Label = coc_str_copy(&first.text);
+	    coc_str_append(&end.Label, "End");
+	    end.line = line;
+	    coc_vec_append(&p->instructions, end);
+	    coc_ht_insert_move(&p->labels, &first.text, p->instructions.size);
+	    return;
+	}
+	if (parser_accept(p, (TokenKind)';')) {
+	    coc_str_append(&first.text, "End");
+	    coc_ht_insert_move(&p->labels, &first.text, p->instructions.size);
+	    return;
+	}
+	parser_error("':' or ';' at the end of the statement", line);
     }
     parser_expect(p, (TokenKind)',', "',' after the first identifier");
 
@@ -434,19 +453,12 @@ static inline void parse_statement(Parser *p) {
                 coc_vec_append(&p->instructions, inst);
                 return;
             }
-            coc_log(COC_ERROR,
-                    "Syntax error at line %d: expected ';' at the end of the statement",
-                    line);
-            exit(1);
+	    parser_error("';' at the end of the statement", line);
         }
 
         if (parser_accept(p, (TokenKind)'!')) {
-            if (second.kind == tok_number) {
-                coc_log(COC_ERROR,
-                        "Syntax error at line %d: expected identifier (action name) before '!', but got number",
-                        line);
-                exit(1);
-            }
+            if (second.kind == tok_number)
+		parser_error("identifier (action name) before '!', but got number", line);
 	    if (parser_accept(p, (TokenKind)'@')) {
 		Token extra = p->cur_tok;
 		if (extra.kind == tok_identifier || extra.kind == tok_number) {
@@ -464,18 +476,8 @@ static inline void parse_statement(Parser *p) {
 			    sugar.is_B_number = false;
 			}
 			coc_vec_append(&p->instructions, sugar);
-		    } else {
-			coc_log(COC_ERROR,
-				"Syntax error at line %d: expected '.' at the end of the statement",
-				line);
-			exit(1);
-		    }
-		} else {
-		    coc_log(COC_ERROR,
-			    "Syntax error at line %d: expected identifier or number after '@'",
-			    line);
-		    exit(1);
-		}
+		    } else parser_error("'.' at the end of the statement", line);
+		} else parser_error("identifier or number after '@'", line);
             }
             Instruction inst = {0};
             inst.op = OP_ACT;
@@ -485,16 +487,9 @@ static inline void parse_statement(Parser *p) {
             coc_vec_append(&p->instructions, inst);
             return;
         }
-
-        coc_log(COC_ERROR, 
-                "Syntax error at line %d: expected '.', '?' or '!' at the end of the statement",
-                line);
-        exit(1);
+	parser_error("'.', '?' or '!' at the end of the statement", line);
     }
-    coc_log(COC_ERROR,
-            "Syntax error at line %d: expected identifier or number after ','",
-            line);
-    exit(1);
+    parser_error("identifier or number after ','", line);
 }
 
 static inline void parse_program(Parser *p) {
