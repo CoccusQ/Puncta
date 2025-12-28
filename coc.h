@@ -1,10 +1,10 @@
-// coc.h - version 1.3.3 (2025-12-28)
+// coc.h - version 1.3.4 (2025-12-28)
 #ifndef COC_H_
 #define COC_H_
 
 #define COC_VERSION_MAJOR 1
 #define COC_VERSION_MINOR 3
-#define COC_VERSION_PATCH 3
+#define COC_VERSION_PATCH 4
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -159,7 +159,7 @@ static inline Coc_Log_Level coc_log_level_from_cstr(const char *cstr) {
     (vec)->capacity = 0;       \
 } while (0)
 
-#define coc_vec_append_many(vec, new_items, new_size) do {                                 \
+#define coc_vec_grow(vec, new_size) do {                                                   \
     COC_ASSERT((vec) != NULL);                                                             \
     if ((vec)->size + new_size >= (vec)->capacity) {                                       \
         if ((vec)->capacity == 0) (vec)->capacity = COC_VEC_INIT_CAP;                      \
@@ -167,10 +167,14 @@ static inline Coc_Log_Level coc_log_level_from_cstr(const char *cstr) {
         (vec)->items = COC_REALLOC((vec)->items, (vec)->capacity * sizeof(*(vec)->items)); \
         COC_ASSERT((vec)->items != NULL && "Realloc failed");                              \
     }                                                                                      \
-    if ((new_items) != NULL) {                                                             \
-        memcpy((vec)->items + (vec)->size, new_items, new_size * sizeof(*(vec)->items));   \
-        (vec)->size += new_size;                                                           \
-    }                                                                                      \
+} while (0)
+
+#define coc_vec_append_many(vec, new_items, new_size) do {                           \
+    COC_ASSERT((vec) != NULL);                                                       \
+    COC_ASSERT((new_items) != NULL);                                                 \
+    coc_vec_grow(vec, new_size);                                                     \
+    memcpy((vec)->items + (vec)->size, new_items, new_size * sizeof(*(vec)->items)); \
+    (vec)->size += new_size;                                                         \
 } while (0)
 
 #define coc_vec_copy(dst, src) do {                                          \
@@ -202,7 +206,7 @@ typedef struct Coc_String {
 
 static inline void coc_str_reserve(Coc_String *str, size_t n) {
     COC_ASSERT((str) != NULL);
-    coc_vec_append_many(str, NULL, n);
+    coc_vec_grow(str, n);
 }
 
 static inline void coc_str_append(Coc_String *str, const char *cstr) {
