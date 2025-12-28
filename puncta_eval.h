@@ -10,7 +10,18 @@
 typedef enum Eval_TokenKind {
     eval_tok_eof = -1,
     eval_tok_var = -2,
-    eval_tok_num = -3
+    eval_tok_num = -3,
+
+    eval_tok_add = '+',
+    eval_tok_sub = '-',
+    eval_tok_mul = '*',
+    eval_tok_div = '/',
+    eval_tok_mod = '%',
+    eval_tok_pow = '^',
+    eval_tok_gt  = '>',
+    eval_tok_lt  = '<',
+    eval_tok_eq  = '=',
+    eval_tok_neq = '#'
 } Eval_TokenKind;
 
 typedef struct Eval_Token {
@@ -142,6 +153,7 @@ static inline Eval_Node *eval_parse_factor(Eval_Parser *p) {
         return n;
     }
     eval_error("expected variable (A-Z, a-z) or digit (0-9)", p->expr, cur_pos, p->ctx);
+    return NULL;
 }
 
 static inline Eval_Node *eval_parse_pow(Eval_Parser *p) {
