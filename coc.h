@@ -1,10 +1,10 @@
-// coc.h - version 1.3.2 (2025-12-25)
+// coc.h - version 1.3.3 (2025-12-28)
 #ifndef COC_H_
 #define COC_H_
 
 #define COC_VERSION_MAJOR 1
 #define COC_VERSION_MINOR 3
-#define COC_VERSION_PATCH 2
+#define COC_VERSION_PATCH 3
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -125,11 +125,12 @@ static inline void coc_log_reopen(const char *logfilename) {
 
 static inline Coc_Log_Level coc_log_level_from_cstr(const char *cstr) {
     if (cstr == NULL) return COC_LOG_LEVEL_GLOBAL;
-    if (strcmp("debug"  , cstr) == 0) return COC_DEBUG;
-    if (strcmp("info"   , cstr) == 0) return COC_INFO;
-    if (strcmp("warning", cstr) == 0) return COC_WARNING;
-    if (strcmp("error"  , cstr) == 0) return COC_ERROR;
-    if (strcmp("fatal"  , cstr) == 0) return COC_FATAL;
+    if (strcmp("DEBUG"  , cstr) == 0) return COC_DEBUG;
+    if (strcmp("INFO"   , cstr) == 0) return COC_INFO;
+    if (strcmp("WARNING", cstr) == 0) return COC_WARNING;
+    if (strcmp("ERROR"  , cstr) == 0) return COC_ERROR;
+    if (strcmp("FATAL"  , cstr) == 0) return COC_FATAL;
+    if (strcmp("NONE"   , cstr) == 0) return COC_NONE;
     return COC_LOG_LEVEL_GLOBAL;
 }
 
