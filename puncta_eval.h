@@ -1,5 +1,11 @@
+// puncta_eval.h - version 1.0.0 (2025-12-28)
 #ifndef PUNCTA_EVAL_H_
 #define PUNCTA_EVAL_H_
+
+#define PUNCTA_EVAL_VERSION_MAJOR 1
+#define PUNCTA_EVAL_VERSION_MINOR 0
+#define PUNCTA_EVAL_VERSION_PATCH 0
+
 #include <math.h>
 #include "coc.h"
 
