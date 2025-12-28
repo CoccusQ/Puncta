@@ -1,15 +1,19 @@
-// puncta.h - version 1.0.0 (2025-12-28)
+// puncta.h - version 1.0.1 (2025-12-29)
 #ifndef PUNCTA_H_
 #define PUNCTA_H_
 
 #define PUNCTA_VERSION_MAJOR 1
 #define PUNCTA_VERSION_MINOR 0
-#define PUNCTA_VERSION_PATCH 0
+#define PUNCTA_VERSION_PATCH 1
 
 #include <math.h>
 #include <limits.h>
 #include "coc.h"
 #include "puncta_eval.h"
+
+#ifndef UNUSED
+#define UNUSED(x) (void)(x)
+#endif
 
 typedef struct Number {
     long long int_value;
@@ -700,31 +704,37 @@ static inline void vm_check_labels(VM *vm) {
 }
 
 static inline void act_inc(VM *vm, Number *n) {
+    UNUSED(vm);
     if (n->is_float) n->float_value += 1.0;
     else n->int_value += 1;
 }
 
 static inline void act_dec(VM *vm, Number *n) {
+    UNUSED(vm);
     if (n->is_float) n->float_value -= 1.0;
     else n->int_value -= 1;
 }
 
 static inline void act_double(VM *vm, Number *n) {
+    UNUSED(vm);
     if (n->is_float) n->float_value *= 2;
     else n->int_value *= 2;
 }
 
 static inline void act_halve(VM *vm, Number *n) {
+    UNUSED(vm);
     if (n->is_float) n->float_value /= 2;
     else n->int_value /=2;
 }
 
 static inline void act_neg(VM *vm, Number *n) {
+    UNUSED(vm);
     if (n->is_float) n->float_value = -n->float_value;
     else n->int_value = -n->int_value;
 }
 
 static inline void act_abs(VM *vm, Number *n) {
+    UNUSED(vm);
     if (n->is_float) {
         n->float_value = fabs(n->float_value);
         return;
@@ -772,6 +782,7 @@ static inline void act_toint(VM *vm, Number *n) {
 }
 
 static inline void act_input(VM *vm, Number *n) {
+    UNUSED(vm);
     char buf[128];
     if (!fgets(buf, sizeof(buf), stdin)) {
         coc_log(COC_FATAL, "Input error: fgets() failed");
@@ -831,16 +842,19 @@ static inline void act_input(VM *vm, Number *n) {
 }
 
 static inline void act_print(VM *vm, Number *n) {
+    UNUSED(vm);
     if (n->is_float) printf("%g\n", n->float_value);
     else printf("%lld\n", n->int_value);
 }
 
 static inline void act_putn(VM *vm, Number *n) {
+    UNUSED(vm);
     if (n->is_float) printf("%g", n->float_value);
     else printf("%lld", n->int_value);
 }
 
 static inline void act_getc(VM *vm, Number *n) {
+    UNUSED(vm);
     int c = getchar();
     if (c == EOF) {
         coc_log(COC_FATAL, "Input error: getchar() failed");
@@ -857,6 +871,7 @@ static inline void act_putc(VM *vm, Number *n) {
 }
 
 static inline void act_gets(VM *vm, Number *n) {
+    UNUSED(vm);
     char buf[10];
     if (!fgets(buf, sizeof(buf), stdin)) {
         coc_log(COC_FATAL, "Input error: fgets() failed");
