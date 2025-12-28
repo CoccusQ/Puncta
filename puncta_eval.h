@@ -1,10 +1,10 @@
-// puncta_eval.h - version 1.0.0 (2025-12-28)
+// puncta_eval.h - version 1.0.1 (2025-12-29)
 #ifndef PUNCTA_EVAL_H_
 #define PUNCTA_EVAL_H_
 
 #define PUNCTA_EVAL_VERSION_MAJOR 1
 #define PUNCTA_EVAL_VERSION_MINOR 0
-#define PUNCTA_EVAL_VERSION_PATCH 0
+#define PUNCTA_EVAL_VERSION_PATCH 1
 
 #include <math.h>
 #include "coc.h"
@@ -316,6 +316,7 @@ static inline double eval_node(const Eval_Node *n, const double vars[52], const 
             if (n->as.unary.op == '-') return -a;
             eval_error("unknown unary op", expr, n->pos, ctx);
         }
+	break;
         case EVAL_NODE_BINARY: {
             Eval_TokenKind op = n->as.binary.op;
             if (op == '&') {
@@ -370,11 +371,13 @@ static inline double eval_node(const Eval_Node *n, const double vars[52], const 
                 eval_error("unknown binary op", expr, n->pos, ctx);
             }
         }
+	break;
         case EVAL_NODE_TERNARY: {
             double cond = eval_node(n->as.ternary.c, vars, expr, ctx);
             if (truthy(cond)) return eval_node(n->as.ternary.t, vars, expr, ctx);
             return eval_node(n->as.ternary.f, vars, expr, ctx); 
         }
+	break;
     }
     eval_error("unknown node kind", expr, n->pos, ctx);
     return 0.0;
