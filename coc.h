@@ -1,10 +1,10 @@
-// coc.h - version 1.3.4 (2025-12-28)
+// coc.h - version 1.3.5 (2025-12-29)
 #ifndef COC_H_
 #define COC_H_
 
 #define COC_VERSION_MAJOR 1
 #define COC_VERSION_MINOR 3
-#define COC_VERSION_PATCH 4
+#define COC_VERSION_PATCH 5
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,7 +48,7 @@ extern Coc_Log_Config coc_log_config;
 #define COC_HT_LOAD_FACTOR   0.75f
 
 static inline void coc_log_core(int level, const char *fmt, va_list args) {
-    if (coc_log_config.g_coc_log_level > level) return;
+    if ((int)coc_log_config.g_coc_log_level > level) return;
     time_t now = time(NULL);
     char buf[32];
     if (coc_log_config.enable_time) {
