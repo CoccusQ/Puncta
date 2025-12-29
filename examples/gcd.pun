@@ -1,0 +1,22 @@
+(Puncta: GCD)
+(Input a, b)
+s, puts! @"> a = ".
+a, input! @0.
+s, puts! @"> b = ".
+b, input! @0.
+A, a.
+B, b.
+gcd;
+gcdRet:
+s, puts! @"a % b = ".
+A, print!
+(EUCLID)
+gcd#:
+gcd_loop:
+B, 0? gcdRet;
+R, eval! @"A%B".
+A, B.
+B, R.
+gcd_loop;
+gcd#;
+

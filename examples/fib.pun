@@ -1,0 +1,31 @@
+(Puncta: Fibonacci)
+(Input n)
+s, puts! @"> n = ".
+n, input! @0.
+
+(Initialize Variables)
+res, n.
+s, puts! @"Fib = [ ".
+a, putn! @0.
+s, " ".
+s, putc!
+n, 0? End; (F[0] = 0)
+b, putn! @1.
+s, putc!
+n, 1? End; (F[1] = 1)
+
+loop:
+    (F[i] = F[i - 2] + F[i - 1] (i >= 2))
+    res, eval! @"a+b".
+    res, putn!
+    s, putc!
+
+    a, b.
+    b, res.
+    n, dec!
+    n, 0? End;
+loop;
+
+End:
+    s, puts! @"]\nAns = ".
+    res, print! (print F[n])
