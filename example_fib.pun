@@ -1,20 +1,16 @@
 (Puncta: Fibonacci)
 (Input n)
-n, 0.
-s, 0.
 s, puts! @"> n = ".
-n, input!
+n, input! @0.
 
 (Initialize Variables)
 res, n.
 s, puts! @"Fib = [ ".
-a, 0.
-b, 1.
-a, putn!
+a, putn! @0.
 s, " ".
 s, putc!
 n, 0? End; (F[0] = 0)
-b, putn!
+b, putn! @1.
 s, putc!
 n, 1? End; (F[1] = 1)
 
