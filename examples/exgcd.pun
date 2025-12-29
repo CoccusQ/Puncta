@@ -1,0 +1,29 @@
+(Puncta: EXGCD)
+s, puts! @"> a = ".
+a, input! @0.
+s, puts! @"> b = ".
+b, input! @0.
+R, a. X, 1. Y, 0.
+r, b. x, 0. y, 1.
+exgcd;
+exgcdRet:
+s, puts! @"x = ".
+X, print!
+s, puts! @"y = ".
+Y, print!
+s, puts! @"gcd = ".
+R, print!
+
+exgcd#:
+exgcd_loop:
+r, 0? exgcdRet;
+q, eval! @"R/r".
+q, toint!
+r1, eval! @"R%r".
+x1, eval! @"X-q*x".
+y1, eval! @"Y-q*y".
+R, r. r, r1.
+X, x. x, x1.
+Y, y. y, y1.
+exgcd_loop;
+exgcd#;
