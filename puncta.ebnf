@@ -1,0 +1,35 @@
+program            = { statement } ;
+statement          = assign_stmt
+                   | action_stmt
+	           | label_stmt
+         	   | jump_stmt
+         	   | cjump_stmt
+	           ;
+
+assign_stmt        = variable, ",", rvalue, "." ;
+action_stmt        = variable, ",", action, "!", [ "@", rvalue, "." ] ;
+label_stmt         = label, [ "#" ], ":" ;
+jump_stmt          = label, [ "#" ], ";" ;
+cjump_stmt         = variable, ",", rvalue, "?", jump_stmt ; 
+
+variable           = identifier ;
+action             = identifier ;
+label              = identifier ;
+rvalue             = identifier | literal ;
+
+identifier         = (letter | "_" ), { letter | digit | "_" } ;
+literal            = decimal_number
+                   | hexadecimal_number
+                   | string
+                   ;
+
+decimal_number     = [ "+" | "-" ], digit, { digit }, [ ".", { digit } ] ;
+hexadecimal_number = "0", ( "x" | "X" ), hex_digit, { hex_digit } ;
+string             = "\"", { character - "\"" - "\\" | escape_sequence }, "\"" ;
+
+letter             = "a" ... "z" | "A" ... "Z" ;
+digit              = "0" ... "9"  ;
+hex_digit          = digit | "a" ... "f" | "A" ... "F" ;
+escape_sequence    = "\\", ( "a" | "b" | "t" | "n" | "v" | "f" | "r" | "\"" | "\\" | "0" ) ;
+character          = " " ... "~" ;
+
