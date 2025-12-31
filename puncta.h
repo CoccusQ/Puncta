@@ -1,10 +1,10 @@
-// puncta.h - version 1.0.1 (2025-12-29)
+// puncta.h - version 1.0.2 (2025-12-31)
 #ifndef PUNCTA_H_
 #define PUNCTA_H_
 
 #define PUNCTA_VERSION_MAJOR 1
 #define PUNCTA_VERSION_MINOR 0
-#define PUNCTA_VERSION_PATCH 1
+#define PUNCTA_VERSION_PATCH 2
 
 #include <math.h>
 #include <limits.h>
@@ -79,6 +79,10 @@ typedef struct Lexer {
 
 static inline Lexer *lexer_init(Coc_String source) {
     Lexer *lex = (Lexer *)COC_MALLOC(sizeof(Lexer));
+    if (lex == NULL) {
+	coc_log(COC_FATAL, "Lexer init: malloc() failed");
+        exit(1);
+    }
     lex->src = source;
     lex->pos = 0;
     lex->line = 1;
@@ -355,6 +359,10 @@ typedef struct Parser {
 
 static inline Parser *parser_init(Lexer *lex) {
     Parser *parser = (Parser *)COC_MALLOC(sizeof(Parser));
+    if (parser == NULL) {
+	coc_log(COC_FATAL, "Parser init: malloc() failed");
+        exit(1);
+    }
     parser->lex = lex;
     parser->cur_tok = lexer_next(lex);
     parser->instructions = (Program){0};
@@ -391,35 +399,88 @@ static inline Token parser_expect(Parser *p, TokenKind k, const char *msg) {
     return t;
 }
 
+#define emit_assign(p, first, second, line) do {    \
+    Instruction inst = {0};                         \
+    inst.op = OP_ASSIGN;                            \
+    inst.OperandA = coc_str_move(&first.text);      \
+    inst.line = line;                               \
+    if (second.kind == tok_number) {                \
+	inst.number = second.number;                \
+	inst.is_B_number = true;                    \
+    } else {                                        \
+	inst.OperandB = coc_str_move(&second.text); \
+	inst.is_B_number = false;                   \
+    }                                               \
+    coc_vec_append(&p->instructions, inst);         \
+} while (0)
+
+#define emit_act(p, first, second, line) do {   \
+    Instruction inst = {0};                     \
+    inst.op = OP_ACT;                           \
+    inst.OperandA = coc_str_move(&first.text);  \
+    inst.OperandB = coc_str_move(&second.text); \
+    inst.line = line;                           \
+    coc_vec_append(&p->instructions, inst);     \
+} while (0)
+
+#define emit_label(p, label, line) do {                                \
+    coc_ht_insert_move(&p->labels, &label.text, p->instructions.size); \
+} while (0)
+
+#define emit_jmp(p, label, line) do {       \
+    Instruction inst = {0};                 \
+    inst.op = OP_JMP;                       \
+    inst.Label = coc_str_move(&label.text); \
+    inst.line = line;                       \
+    coc_vec_append(&p->instructions, inst); \
+} while (0)
+
+#define emit_jeq(p, first, second, label, line) do { \
+    Instruction inst = {0};                          \
+    inst.op = OP_JEQ;                                \
+    inst.OperandA = coc_str_move(&first.text);       \
+    inst.line = line;                                \
+    if (second.kind == tok_number) {                 \
+	inst.number = second.number;                 \
+	inst.is_B_number = true;                     \
+    } else {                                         \
+	inst.OperandB = coc_str_move(&second.text);  \
+	inst.is_B_number = false;                    \
+    }                                                \
+    inst.Label = coc_str_move(&label.text);          \
+    coc_vec_append(&p->instructions, inst);          \
+} while (0)
+
+#define emit_end(p) do {                   \
+    Instruction end = {0};                 \
+    end.op = OP_END;                       \
+    coc_vec_append(&p->instructions, end); \
+} while (0)
+
+
 static inline void parse_statement(Parser *p) {
     int line = p->cur_tok.line;
     Token first = parser_expect(p, tok_identifier, "the first identifier");
     if (parser_accept(p, (TokenKind)':')) {
-        coc_ht_insert_move(&p->labels, &first.text, p->instructions.size);
+        emit_label(p, first, line);
         return;
     }
     if (parser_accept(p, (TokenKind)';')) {
-        Instruction inst = {0};
-        inst.op = OP_JMP;
-        inst.Label = coc_str_move(&first.text);
-        inst.line = line;
-        coc_vec_append(&p->instructions, inst);
+	emit_jmp(p, first, line);
         return;
     }
     if (parser_accept(p, (TokenKind)'#')) {
 	if (parser_accept(p, (TokenKind)':')) {
-	    Instruction end = {0};
-	    end.op = OP_JMP;
-	    end.Label = coc_str_copy(&first.text);
-	    coc_str_append(&end.Label, "End");
-	    end.line = line;
-	    coc_vec_append(&p->instructions, end);
-	    coc_ht_insert_move(&p->labels, &first.text, p->instructions.size);
+	    Token end_label = first;
+	    end_label.text = coc_str_copy(&first.text);
+	    coc_str_append(&end_label.text, "End");
+	    emit_jmp(p, end_label, line);
+	    emit_label(p, first, line);
 	    return;
 	}
 	if (parser_accept(p, (TokenKind)';')) {
 	    coc_str_append(&first.text, "End");
-	    coc_ht_insert_move(&p->labels, &first.text, p->instructions.size);
+	    emit_label(p, first, line);
 	    return;
 	}
 	parser_error("':' or ';' at the end of the statement", line);
@@ -430,37 +491,14 @@ static inline void parse_statement(Parser *p) {
     if (second.kind == tok_identifier || second.kind == tok_number) {
         parser_next(p);
         if (parser_accept(p, (TokenKind)'.')) {
-            Instruction inst = {0};
-            inst.op = OP_ASSIGN;
-            inst.OperandA = coc_str_move(&first.text);
-            inst.line = line;
-            if (second.kind == tok_number) {
-                inst.number = second.number;
-                inst.is_B_number = true;
-            } else {
-                inst.OperandB = coc_str_move(&second.text);
-                inst.is_B_number = false;
-            }
-            coc_vec_append(&p->instructions, inst);
+	    emit_assign(p, first, second, line);
             return;
         }
 
         if (parser_accept(p, (TokenKind)'?')) {
             Token label = parser_expect(p, tok_identifier, "label");
             if (parser_accept(p, (TokenKind)';')) {
-                Instruction inst = {0};
-                inst.op = OP_JEQ;
-                inst.OperandA = coc_str_move(&first.text);
-                inst.line = line;
-                if (second.kind == tok_number) {
-                    inst.number = second.number;
-                    inst.is_B_number = true;
-                } else {
-                    inst.OperandB = coc_str_move(&second.text);
-                    inst.is_B_number = false;
-                }
-                inst.Label = coc_str_move(&label.text);
-                coc_vec_append(&p->instructions, inst);
+		emit_jeq(p, first, second, label, line);
                 return;
             }
 	    parser_error("';' at the end of the statement", line);
@@ -474,27 +512,11 @@ static inline void parse_statement(Parser *p) {
 		if (extra.kind == tok_identifier || extra.kind == tok_number) {
 		    parser_next(p);
 		    if (parser_accept(p, (TokenKind)'.')) {
-			Instruction sugar = {0};
-			sugar.op = OP_ASSIGN;
-			sugar.OperandA = coc_str_copy(&first.text);
-			sugar.line = line;
-			if (extra.kind == tok_number) {
-			    sugar.number = extra.number;
-			    sugar.is_B_number = true;
-			} else {
-			    sugar.OperandB = coc_str_move(&extra.text);
-			    sugar.is_B_number = false;
-			}
-			coc_vec_append(&p->instructions, sugar);
+			emit_assign(p, first, extra, line);
 		    } else parser_error("'.' at the end of the statement", line);
 		} else parser_error("identifier or number after '@'", line);
             }
-            Instruction inst = {0};
-            inst.op = OP_ACT;
-            inst.OperandA = coc_str_move(&first.text);
-            inst.OperandB = coc_str_move(&second.text);
-            inst.line = line;
-            coc_vec_append(&p->instructions, inst);
+	    emit_act(p, first, second, line);
             return;
         }
 	parser_error("'.', '?' or '!' at the end of the statement", line);
@@ -506,9 +528,7 @@ static inline void parse_program(Parser *p) {
     while (p->cur_tok.kind != tok_eof) {
         parse_statement(p);
     }
-    Instruction end = {0};
-    end.op = OP_END;
-    coc_vec_append(&p->instructions, end);
+    emit_end(p);
 }
 
 typedef struct VarEntry {
@@ -549,8 +569,16 @@ struct VM {
     int pc;
 };
 
+#define vm_msg(...) do {            \
+    coc_log(COC_INFO, __VA_ARGS__); \
+} while (0)
+
 static inline VM *vm_init(Parser *p) {
     VM *vm = (VM *)COC_MALLOC(sizeof(VM));
+    if (vm == NULL) {
+	coc_log(COC_FATAL, "VM init: malloc() failed");
+        exit(1);
+    }
     coc_vec_move(&vm->prog, &p->instructions);
     coc_vec_move(&vm->labels, &p->labels);
     vm->vars = (VarHashTable){0};
@@ -929,6 +957,7 @@ static inline void act_eval(VM *vm, Number *n) {
 }
 
 static inline void register_builtin_actions(VM *vm) {
+    int start = __LINE__;
     register_act(vm, "inc"   , act_inc);
     register_act(vm, "dec"   , act_dec);
     register_act(vm, "double", act_double);
@@ -949,6 +978,8 @@ static inline void register_builtin_actions(VM *vm) {
     register_act(vm, "putl"  , act_putl);
     register_act(vm, "putx"  , act_putx);
     register_act(vm, "eval"  , act_eval);
+    int end = __LINE__;
+    coc_log(COC_DEBUG, "Register %d builtin actions", end - start + 1);
 }
 
 static inline VM *run_file(const char *filename, void (*register_user_actions)(VM *)) {
@@ -957,11 +988,13 @@ static inline VM *run_file(const char *filename, void (*register_user_actions)(V
     Lexer *lex = lexer_init(source);
     Parser *parser = parser_init(lex);
     parse_program(parser);
-    coc_log(COC_INFO, "Compile finished: %zu instructions", parser->instructions.size);
+    coc_log(COC_DEBUG,
+	    "Compile finished: %zu instructions, %zu labels",
+	    parser->instructions.size, parser->labels.size);
     VM *vm = vm_init(parser);
     register_builtin_actions(vm);
     if (register_user_actions != NULL) {
-        coc_log(COC_INFO, "Register user actions");
+        coc_log(COC_DEBUG, "Register user actions");
         register_user_actions(vm);
     }
     vm_check_labels(vm);
