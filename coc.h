@@ -1,10 +1,10 @@
-// coc.h - version 1.3.6 (2025-12-29)
+// coc.h - version 1.3.7 (2025-12-31)
 #ifndef COC_H_
 #define COC_H_
 
 #define COC_VERSION_MAJOR 1
 #define COC_VERSION_MINOR 3
-#define COC_VERSION_PATCH 6
+#define COC_VERSION_PATCH 7
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,7 +35,7 @@ typedef struct Coc_Log_Config {
 
 extern Coc_Log_Config coc_log_config;
 
-#define COC_LOG_LEVEL_GLOBAL COC_DEBUG
+#define COC_LOG_LEVEL_GLOBAL COC_INFO
 #define COC_LOG_OUTPUT       stderr
 
 #define COC_MALLOC(...)      malloc(__VA_ARGS__)
@@ -183,7 +183,7 @@ static inline Coc_Log_Level coc_log_level_from_cstr(const char *cstr) {
     (dst)->size = (src)->size;                                               \
     (dst)->capacity = (src)->capacity;                                       \
     (dst)->items = COC_MALLOC((src)->capacity * sizeof(*(src)->items));      \
-    COC_ASSERT((dst)->items != NULL && "Realloc failed");                    \
+    COC_ASSERT((dst)->items != NULL && "Malloc failed");                     \
     memcpy((dst)->items, (src)->items, (src)->size * sizeof(*(src)->items)); \
 } while (0)
 
@@ -412,7 +412,7 @@ static inline size_t coc_kv_split(const char *arg, const char **value) {
         return (size_t)(eq - arg);
     } else {
         *value = NULL;
-        return 0;
+        return strlen(arg);
     }
 }
 
