@@ -14,8 +14,13 @@ int main(int argc, char *argv[]) {
         const char *arg = argv[i];
         const char *value = NULL;
         size_t len = coc_kv_split(arg, &value);
-        if (value) {
-            if (coc_kv_match(arg, len, "--log-level")) {
+        if (len > 2 && arg[0] == '-' && arg[1] == '-') {
+            if (coc_kv_match(arg, len, "--version")) {
+		coc_log_raw(COC_INFO,
+			    "Puncta %d.%d.%d",
+			    PUNCTA_VERSION_MAJOR, PUNCTA_VERSION_MINOR, PUNCTA_VERSION_PATCH);
+		return 0;
+            } else if (coc_kv_match(arg, len, "--log-level")) {
                 log_level = coc_log_level_from_cstr(value);
             } else if (coc_kv_match(arg, len, "--log-file")) {
                 log_file = value;
