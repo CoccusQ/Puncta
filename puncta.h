@@ -1,10 +1,10 @@
-// puncta.h - version 1.0.2 (2025-12-31)
+// puncta.h - version 1.0.3 (2025-12-31)
 #ifndef PUNCTA_H_
 #define PUNCTA_H_
 
 #define PUNCTA_VERSION_MAJOR 1
 #define PUNCTA_VERSION_MINOR 0
-#define PUNCTA_VERSION_PATCH 2
+#define PUNCTA_VERSION_PATCH 3
 
 #include <math.h>
 #include <limits.h>
@@ -512,7 +512,9 @@ static inline void parse_statement(Parser *p) {
 		if (extra.kind == tok_identifier || extra.kind == tok_number) {
 		    parser_next(p);
 		    if (parser_accept(p, (TokenKind)'.')) {
-			emit_assign(p, first, extra, line);
+			Token temp = first;
+			temp.text = coc_str_copy(&first.text);
+			emit_assign(p, temp, extra, line);
 		    } else parser_error("'.' at the end of the statement", line);
 		} else parser_error("identifier or number after '@'", line);
             }
