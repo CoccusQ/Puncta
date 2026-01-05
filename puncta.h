@@ -1,10 +1,10 @@
-// puncta.h - version 1.0.3 (2025-12-31)
+// puncta.h - version 1.0.4 (2026-01-05)
 #ifndef PUNCTA_H_
 #define PUNCTA_H_
 
 #define PUNCTA_VERSION_MAJOR 1
 #define PUNCTA_VERSION_MINOR 0
-#define PUNCTA_VERSION_PATCH 3
+#define PUNCTA_VERSION_PATCH 4
 
 #include <math.h>
 #include <limits.h>
@@ -285,7 +285,7 @@ static inline Token lexer_next(Lexer *l) {
                     exit(1);
                 }
             }
-            value |= (uint64_t)ch << ((len++) * 8);
+            value |= ((uint64_t)ch & 0xFF) << ((len++) * 8);
         }
         if (lexer_peek(l) != '"') {
             coc_log(COC_ERROR, 
