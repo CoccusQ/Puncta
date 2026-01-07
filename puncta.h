@@ -1,10 +1,10 @@
-// puncta.h - version 1.0.4 (2026-01-05)
+// puncta.h - version 1.0.5 (2026-01-08)
 #ifndef PUNCTA_H_
 #define PUNCTA_H_
 
 #define PUNCTA_VERSION_MAJOR 1
 #define PUNCTA_VERSION_MINOR 0
-#define PUNCTA_VERSION_PATCH 4
+#define PUNCTA_VERSION_PATCH 5
 
 #include <math.h>
 #include <limits.h>
@@ -16,8 +16,10 @@
 #endif
 
 typedef struct Number {
-    long long int_value;
-    double float_value;
+    union {
+	long long int_value;
+	double float_value;
+    };
     bool is_float;
 } Number;
 
