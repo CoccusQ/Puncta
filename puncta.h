@@ -1,24 +1,20 @@
-// puncta.h - version 1.0.5 (2026-01-08)
+// puncta.h - version 1.0.6 (2026-01-10)
 #ifndef PUNCTA_H_
 #define PUNCTA_H_
 
 #define PUNCTA_VERSION_MAJOR 1
 #define PUNCTA_VERSION_MINOR 0
-#define PUNCTA_VERSION_PATCH 5
+#define PUNCTA_VERSION_PATCH 6
 
 #include <math.h>
 #include <limits.h>
 #include "coc.h"
 #include "puncta_eval.h"
 
-#ifndef UNUSED
-#define UNUSED(x) (void)(x)
-#endif
-
 typedef struct Number {
     union {
-	long long int_value;
-	double float_value;
+        long long int_value;
+        double    float_value;
     };
     bool is_float;
 } Number;
@@ -40,7 +36,7 @@ static inline size_t number_to_string(const Number *n, char *buf, size_t buf_siz
     if (n->is_float) {
         coc_log(COC_ERROR, 
                 "Runtime error at line %d: in action '%s': cannot treat a floating-point value as a string (packed int64 required); got float=%g",
-               line, who, n->float_value);
+                line, who, n->float_value);
         exit(1);
     }
     uint64_t value = (uint64_t)n->int_value;
@@ -67,26 +63,26 @@ typedef enum TokenKind{
 } TokenKind;
 
 typedef struct Token {
-    TokenKind kind;
     Coc_String text;
-    Number number;
-    int line;
+    Number     number;
+    TokenKind  kind;
+    int        line;
 } Token;
 
 typedef struct Lexer {
     Coc_String src;
-    size_t pos;
-    int line;
+    size_t     pos;
+    int        line;
 } Lexer;
 
 static inline Lexer *lexer_init(Coc_String source) {
     Lexer *lex = (Lexer *)COC_MALLOC(sizeof(Lexer));
     if (lex == NULL) {
-	coc_log(COC_FATAL, "Lexer init: malloc() failed");
+    coc_log(COC_FATAL, "Lexer init: malloc() failed");
         exit(1);
     }
-    lex->src = source;
-    lex->pos = 0;
+    lex->src  = source;
+    lex->pos  = 0;
     lex->line = 1;
     return lex;
 }
@@ -217,7 +213,7 @@ static inline Token lexer_next(Lexer *l) {
                 .kind = tok_number,
                 .number = (Number){
                     .float_value = float_val,
-                    .is_float = true
+                    .is_float    = true
                 },
                 .line = l->line
             };
@@ -239,7 +235,7 @@ static inline Token lexer_next(Lexer *l) {
                 .kind = tok_number,
                 .number = (Number){
                     .int_value = int_val,
-                    .is_float = false
+                    .is_float  = false
                 },
                 .line = l->line
             };
@@ -300,7 +296,7 @@ static inline Token lexer_next(Lexer *l) {
             .kind = tok_number,
             .number = (Number){
                 .int_value = value,
-                .is_float = false
+                .is_float  = false
             },
             .line = l->line
         };
@@ -324,51 +320,51 @@ typedef enum OpCode {
 } OpCode;
 
 typedef struct Instruction {
-    OpCode op;
     Coc_String OperandA;
     Coc_String OperandB;
     Coc_String Label;
-    Number number;
-    bool is_B_number;
-    int line;
+    Number     number;
+    OpCode     op;
+    int        line;
+    bool       is_B_number;
 } Instruction;
 
 typedef struct Program {
     Instruction *items;
-    size_t size;
-    size_t capacity;
+    size_t       size;
+    size_t       capacity;
 } Program;
 
 typedef struct LabelEntry {
     Coc_String key;
-    int value;
-    bool is_used;
+    int        value;
+    bool       is_used;
 } LabelEntry;
 
 typedef struct LabelHashTable {
     LabelEntry *items;
     LabelEntry *new_items;
-    size_t size;
-    size_t capacity;
+    size_t      size;
+    size_t      capacity;
 } LabelHashTable;
 
 typedef struct Parser {
-    Lexer *lex;
-    Token cur_tok;
-    Program instructions;
+    Lexer         *lex;
+    Token          cur_tok;
+    Program        instructions;
     LabelHashTable labels;
 } Parser;
 
 static inline Parser *parser_init(Lexer *lex) {
     Parser *parser = (Parser *)COC_MALLOC(sizeof(Parser));
     if (parser == NULL) {
-	coc_log(COC_FATAL, "Parser init: malloc() failed");
+    coc_log(COC_FATAL, "Parser init: malloc() failed");
         exit(1);
     }
-    parser->lex = lex;
-    parser->cur_tok = lexer_next(lex);
+    parser->lex          = lex;
+    parser->cur_tok      = lexer_next(lex);
     parser->instructions = (Program){0};
-    parser->labels = (LabelHashTable){0};
+    parser->labels       = (LabelHashTable){0};
     return parser;
 }
 
@@ -407,11 +403,11 @@ static inline Token parser_expect(Parser *p, TokenKind k, const char *msg) {
     inst.OperandA = coc_str_move(&first.text);      \
     inst.line = line;                               \
     if (second.kind == tok_number) {                \
-	inst.number = second.number;                \
-	inst.is_B_number = true;                    \
+        inst.number = second.number;                \
+        inst.is_B_number = true;                    \
     } else {                                        \
-	inst.OperandB = coc_str_move(&second.text); \
-	inst.is_B_number = false;                   \
+        inst.OperandB = coc_str_move(&second.text); \
+        inst.is_B_number = false;                   \
     }                                               \
     coc_vec_append(&p->instructions, inst);         \
 } while (0)
@@ -443,11 +439,11 @@ static inline Token parser_expect(Parser *p, TokenKind k, const char *msg) {
     inst.OperandA = coc_str_move(&first.text);       \
     inst.line = line;                                \
     if (second.kind == tok_number) {                 \
-	inst.number = second.number;                 \
-	inst.is_B_number = true;                     \
+        inst.number = second.number;                 \
+        inst.is_B_number = true;                     \
     } else {                                         \
-	inst.OperandB = coc_str_move(&second.text);  \
-	inst.is_B_number = false;                    \
+        inst.OperandB = coc_str_move(&second.text);  \
+        inst.is_B_number = false;                    \
     }                                                \
     inst.Label = coc_str_move(&label.text);          \
     coc_vec_append(&p->instructions, inst);          \
@@ -468,24 +464,24 @@ static inline void parse_statement(Parser *p) {
         return;
     }
     if (parser_accept(p, (TokenKind)';')) {
-	emit_jmp(p, first, line);
+        emit_jmp(p, first, line);
         return;
     }
     if (parser_accept(p, (TokenKind)'#')) {
-	if (parser_accept(p, (TokenKind)':')) {
-	    Token end_label = first;
-	    end_label.text = coc_str_copy(&first.text);
-	    coc_str_append(&end_label.text, "End");
-	    emit_jmp(p, end_label, line);
-	    emit_label(p, first, line);
-	    return;
-	}
-	if (parser_accept(p, (TokenKind)';')) {
-	    coc_str_append(&first.text, "End");
-	    emit_label(p, first, line);
-	    return;
-	}
-	parser_error("':' or ';' at the end of the statement", line);
+    if (parser_accept(p, (TokenKind)':')) {
+        Token end_label = first;
+        end_label.text = coc_str_copy(&first.text);
+        coc_str_append(&end_label.text, "End");
+        emit_jmp(p, end_label, line);
+        emit_label(p, first, line);
+        return;
+    }
+    if (parser_accept(p, (TokenKind)';')) {
+        coc_str_append(&first.text, "End");
+        emit_label(p, first, line);
+        return;
+    }
+        parser_error("':' or ';' at the end of the statement", line);
     }
     parser_expect(p, (TokenKind)',', "',' after the first identifier");
 
@@ -493,59 +489,57 @@ static inline void parse_statement(Parser *p) {
     if (second.kind == tok_identifier || second.kind == tok_number) {
         parser_next(p);
         if (parser_accept(p, (TokenKind)'.')) {
-	    emit_assign(p, first, second, line);
+            emit_assign(p, first, second, line);
             return;
         }
 
         if (parser_accept(p, (TokenKind)'?')) {
             Token label = parser_expect(p, tok_identifier, "label");
             if (parser_accept(p, (TokenKind)';')) {
-		emit_jeq(p, first, second, label, line);
+            emit_jeq(p, first, second, label, line);
                 return;
             }
-	    parser_error("';' at the end of the statement", line);
+            parser_error("';' at the end of the statement", line);
         }
 
         if (parser_accept(p, (TokenKind)'!')) {
             if (second.kind == tok_number)
-		parser_error("identifier (action name) before '!', but got number", line);
-	    if (parser_accept(p, (TokenKind)'@')) {
-		Token extra = p->cur_tok;
-		if (extra.kind == tok_identifier || extra.kind == tok_number) {
-		    parser_next(p);
-		    if (parser_accept(p, (TokenKind)'.')) {
-			Token temp = first;
-			temp.text = coc_str_copy(&first.text);
-			emit_assign(p, temp, extra, line);
-		    } else parser_error("'.' at the end of the statement", line);
-		} else parser_error("identifier or number after '@'", line);
+            parser_error("identifier (action name) before '!', but got number", line);
+            if (parser_accept(p, (TokenKind)'@')) {
+                Token extra = p->cur_tok;
+                if (extra.kind == tok_identifier || extra.kind == tok_number) {
+                    parser_next(p);
+                    if (parser_accept(p, (TokenKind)'.')) {
+                        Token temp = first;
+                        temp.text = coc_str_copy(&first.text);
+                        emit_assign(p, temp, extra, line);
+                    } else parser_error("'.' at the end of the statement", line);
+                } else parser_error("identifier or number after '@'", line);
             }
-	    emit_act(p, first, second, line);
+            emit_act(p, first, second, line);
             return;
         }
-	parser_error("'.', '?' or '!' at the end of the statement", line);
+        parser_error("'.', '?' or '!' at the end of the statement", line);
     }
     parser_error("identifier or number after ','", line);
 }
 
 static inline void parse_program(Parser *p) {
-    while (p->cur_tok.kind != tok_eof) {
-        parse_statement(p);
-    }
+    while (p->cur_tok.kind != tok_eof) parse_statement(p);
     emit_end(p);
 }
 
 typedef struct VarEntry {
     Coc_String key;
-    Number value;
-    bool is_used;
+    Number     value;
+    bool       is_used;
 } VarEntry;
 
 typedef struct VarHashTable {
     VarEntry *items;
     VarEntry *new_items;
-    size_t size;
-    size_t capacity;
+    size_t    size;
+    size_t    capacity;
 } VarHashTable;
 
 typedef struct VM VM;
@@ -554,40 +548,38 @@ typedef void (*Action)(VM *vm, Number *);
 
 typedef struct ActEntry {
     Coc_String key;
-    Action value;
-    bool is_used;
+    Action     value;
+    bool       is_used;
 } ActEntry;
 
 typedef struct ActHashTable {
     ActEntry *items;
     ActEntry *new_items;
-    size_t size;
-    size_t capacity;
+    size_t    size;
+    size_t    capacity;
 } ActHashTable;
 
 struct VM {
-    Program prog;
     LabelHashTable labels;
-    VarHashTable vars;
-    ActHashTable acts;
-    int pc;
+    VarHashTable   vars;
+    ActHashTable   acts;
+    Program        prog;
+    int            pc;
 };
 
-#define vm_msg(...) do {            \
-    coc_log(COC_INFO, __VA_ARGS__); \
-} while (0)
+#define vm_msg(...) do { coc_log(COC_INFO, __VA_ARGS__); } while (0)
 
 static inline VM *vm_init(Parser *p) {
     VM *vm = (VM *)COC_MALLOC(sizeof(VM));
     if (vm == NULL) {
-	coc_log(COC_FATAL, "VM init: malloc() failed");
+        coc_log(COC_FATAL, "VM init: malloc() failed");
         exit(1);
     }
     coc_vec_move(&vm->prog, &p->instructions);
     coc_vec_move(&vm->labels, &p->labels);
     vm->vars = (VarHashTable){0};
     vm->acts = (ActHashTable){0};
-    vm->pc = 0;
+    vm->pc   = 0;
     parser_free(p);
     return vm;
 }
@@ -693,23 +685,11 @@ void run(VM *vm) {
     while (vm->pc < n) {
         Instruction *inst = &vm->prog.items[vm->pc];
         switch (inst->op) {
-        case OP_ASSIGN:
-            vm_assign(vm, inst);
-            break;
-        case OP_ACT:
-            vm_act(vm, inst);
-            break;
-        case OP_JEQ:
-            vm_jeq(vm, inst);
-            break;
-        case OP_JMP:
-            vm_jmp(vm, inst);
-            break;
-	case OP_END:
-	    vm->pc++;
-	    break;
-        default:
-            break;
+        case OP_ASSIGN: vm_assign(vm, inst); break;
+        case OP_ACT:    vm_act(vm, inst)   ; break;
+        case OP_JEQ:    vm_jeq(vm, inst)   ; break;
+        case OP_JMP:    vm_jmp(vm, inst)   ; break;
+        case OP_END:    vm->pc++           ; break;
         }
     }
 }
@@ -736,37 +716,37 @@ static inline void vm_check_labels(VM *vm) {
 }
 
 static inline void act_inc(VM *vm, Number *n) {
-    UNUSED(vm);
+    COC_UNUSED(vm);
     if (n->is_float) n->float_value += 1.0;
     else n->int_value += 1;
 }
 
 static inline void act_dec(VM *vm, Number *n) {
-    UNUSED(vm);
+    COC_UNUSED(vm);
     if (n->is_float) n->float_value -= 1.0;
     else n->int_value -= 1;
 }
 
 static inline void act_double(VM *vm, Number *n) {
-    UNUSED(vm);
+    COC_UNUSED(vm);
     if (n->is_float) n->float_value *= 2;
     else n->int_value *= 2;
 }
 
 static inline void act_halve(VM *vm, Number *n) {
-    UNUSED(vm);
+    COC_UNUSED(vm);
     if (n->is_float) n->float_value /= 2;
     else n->int_value /=2;
 }
 
 static inline void act_neg(VM *vm, Number *n) {
-    UNUSED(vm);
+    COC_UNUSED(vm);
     if (n->is_float) n->float_value = -n->float_value;
     else n->int_value = -n->int_value;
 }
 
 static inline void act_abs(VM *vm, Number *n) {
-    UNUSED(vm);
+    COC_UNUSED(vm);
     if (n->is_float) {
         n->float_value = fabs(n->float_value);
         return;
@@ -814,7 +794,7 @@ static inline void act_toint(VM *vm, Number *n) {
 }
 
 static inline void act_input(VM *vm, Number *n) {
-    UNUSED(vm);
+    COC_UNUSED(vm);
     char buf[128];
     if (!fgets(buf, sizeof(buf), stdin)) {
         coc_log(COC_FATAL, "Input error: fgets() failed");
@@ -822,8 +802,7 @@ static inline void act_input(VM *vm, Number *n) {
     }
     bool is_float = false;
     bool is_hex = false;
-    if (buf[0] == '0' && (buf[1] == 'x' || buf[1] == 'X'))
-        is_hex = true;
+    if (buf[0] == '0' && (buf[1] == 'x' || buf[1] == 'X')) is_hex = true;
     for (char *p = buf; *p; p++) {
         if (*p == '.') {
             is_float = true;
@@ -874,19 +853,19 @@ static inline void act_input(VM *vm, Number *n) {
 }
 
 static inline void act_print(VM *vm, Number *n) {
-    UNUSED(vm);
+    COC_UNUSED(vm);
     if (n->is_float) printf("%g\n", n->float_value);
     else printf("%lld\n", n->int_value);
 }
 
 static inline void act_putn(VM *vm, Number *n) {
-    UNUSED(vm);
+    COC_UNUSED(vm);
     if (n->is_float) printf("%g", n->float_value);
     else printf("%lld", n->int_value);
 }
 
 static inline void act_getc(VM *vm, Number *n) {
-    UNUSED(vm);
+    COC_UNUSED(vm);
     int c = getchar();
     if (c == EOF) {
         coc_log(COC_FATAL, "Input error: getchar() failed");
@@ -903,16 +882,15 @@ static inline void act_putc(VM *vm, Number *n) {
 }
 
 static inline void act_gets(VM *vm, Number *n) {
-    UNUSED(vm);
+    COC_UNUSED(vm);
     char buf[10];
     if (!fgets(buf, sizeof(buf), stdin)) {
         coc_log(COC_FATAL, "Input error: fgets() failed");
         exit(1);
     }
     uint64_t value = 0;
-    for (int i = 0; buf[i] != '\0'; i++) {
+    for (int i = 0; buf[i] != '\0'; i++)
         value = (value << 8) | (uint64_t)buf[i];
-    }
     n->int_value = value;
     n->is_float = false;
 }
@@ -993,8 +971,8 @@ static inline VM *run_file(const char *filename, void (*register_user_actions)(V
     Parser *parser = parser_init(lex);
     parse_program(parser);
     coc_log(COC_DEBUG,
-	    "Compile finished: %zu instructions, %zu labels",
-	    parser->instructions.size, parser->labels.size);
+        "Compile finished: %zu instructions, %zu labels",
+        parser->instructions.size, parser->labels.size);
     VM *vm = vm_init(parser);
     register_builtin_actions(vm);
     if (register_user_actions != NULL) {
@@ -1006,4 +984,4 @@ static inline VM *run_file(const char *filename, void (*register_user_actions)(V
     return vm;
 }
 
-#endif
+#endif // PUNCTA_H_
