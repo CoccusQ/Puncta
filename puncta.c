@@ -1,14 +1,19 @@
+#define COC_IMPLEMENTATION
 #include "puncta.h"
-
-Coc_Log_Config coc_log_config;
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         coc_log_raw(COC_FATAL, "Usage: %s <file name> [-option]", argv[0]);
         return 1;
     }
+    Coc_Log_Config cfg = {
+        .min_level = COC_LOG_MIN_LEVEL,
+        .use_date  = true,
+        .use_time  = true,
+        .use_ms    = true,
+        .use_color = true
+    };
     const char *filename = NULL;
-    Coc_Log_Level log_level = COC_LOG_LEVEL_GLOBAL;
     const char *log_file = NULL;
     for (int i = 1; i < argc; i++) {
         const char *arg = argv[i];
@@ -16,12 +21,12 @@ int main(int argc, char *argv[]) {
         size_t len = coc_kv_split(arg, &value);
         if (len > 2 && arg[0] == '-' && arg[1] == '-') {
             if (coc_kv_match(arg, len, "--version")) {
-		coc_log_raw(COC_INFO,
-			    "Puncta %d.%d.%d",
-			    PUNCTA_VERSION_MAJOR, PUNCTA_VERSION_MINOR, PUNCTA_VERSION_PATCH);
-		return 0;
+                coc_log_raw(COC_INFO,
+                "Puncta %d.%d.%d",
+                PUNCTA_VERSION_MAJOR, PUNCTA_VERSION_MINOR, PUNCTA_VERSION_PATCH);
+                return 0;
             } else if (coc_kv_match(arg, len, "--log-level")) {
-                log_level = coc_log_level_from_cstr(value);
+                cfg.min_level = coc_log_level_from_cstr(value);
             } else if (coc_kv_match(arg, len, "--log-file")) {
                 log_file = value;
             } else {
@@ -29,15 +34,14 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
         } else {
-            if (!filename) {
-                filename = arg;
-            } else {
+            if (!filename) filename = arg;
+            else {
                 coc_log_raw(COC_ERROR, "%s: extra argument: %s", argv[0],  arg);
                 return 1;
             }
         }
     }
-    coc_log_init(log_level, true, false, log_file);
+    coc_log_init(cfg , log_file);
     if (filename == NULL) {
         coc_log_raw(COC_FATAL, "%s: no input file", argv[0]);
         return 1;
