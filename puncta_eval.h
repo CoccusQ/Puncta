@@ -1,10 +1,10 @@
-// puncta_eval.h - version 1.0.1 (2025-12-29)
+// puncta_eval.h - version 1.0.2 (2026-01-10)
 #ifndef PUNCTA_EVAL_H_
 #define PUNCTA_EVAL_H_
 
 #define PUNCTA_EVAL_VERSION_MAJOR 1
 #define PUNCTA_EVAL_VERSION_MINOR 0
-#define PUNCTA_EVAL_VERSION_PATCH 1
+#define PUNCTA_EVAL_VERSION_PATCH 2
 
 #include <math.h>
 #include "coc.h"
@@ -92,26 +92,26 @@ struct Eval_Node {
         struct { int var; } var;
         struct { int num; } num;
         struct {
-            Eval_TokenKind op; 
-            Eval_Node *a;
+            Eval_TokenKind op;
+            Eval_Node      *a;
         } unary;
         struct {
             Eval_TokenKind op;
-            Eval_Node *l;
-            Eval_Node *r;
+            Eval_Node      *l;
+            Eval_Node      *r;
         } binary;
         struct {
-            Eval_TokenKind op;
-            Eval_Node *c;
-            Eval_Node *t;
-            Eval_Node *f;
+            Eval_TokenKind  op;
+            Eval_Node      *c;
+            Eval_Node      *t;
+            Eval_Node      *f;
         } ternary;
     } as;
 };
 
 typedef struct Eval_NodePool {
     Eval_Node pool[EVAL_NODE_MAX];
-    int used;
+    int       used;
 } Eval_NodePool;
 
 static inline Eval_Node *eval_new_node(Eval_NodePool *p, const char *expr, int pos, const char *ctx) {
@@ -124,20 +124,16 @@ static inline Eval_Node *eval_new_node(Eval_NodePool *p, const char *expr, int p
 
 typedef struct Eval_Parser {
     Eval_NodePool *pool;
-    const char *ctx;
-    const char *expr;
-    Eval_Token *tokens;
-    int token_cnt;
-    int cur;
+    const char    *ctx;
+    const char    *expr;
+    Eval_Token    *tokens;
+    int            token_cnt;
+    int            cur;
 } Eval_Parser;
 
-static inline Eval_Token eval_parser_peek(Eval_Parser *p) {
-    return p->tokens[p->cur];
-}
+static inline Eval_Token eval_parser_peek(Eval_Parser *p) { return p->tokens[p->cur]; }
 
-static inline Eval_Token eval_parser_take(Eval_Parser *p) {
-    return p->tokens[p->cur++];
-}
+static inline Eval_Token eval_parser_take(Eval_Parser *p) { return p->tokens[p->cur++]; }
 
 static inline Eval_Node *eval_parse_ternary(Eval_Parser *p);
 
@@ -165,13 +161,13 @@ static inline Eval_Node *eval_parse_factor(Eval_Parser *p) {
 static inline Eval_Node *eval_parse_pow(Eval_Parser *p) {
     Eval_Node *left = eval_parse_factor(p);
     if (eval_parser_peek(p).kind == '^') {
-        Eval_Token t = eval_parser_take(p);
+        Eval_Token t     = eval_parser_take(p);
         Eval_Node *right = eval_parse_pow(p);
-        Eval_Node *n = eval_new_node(p->pool, p->expr, t.pos, p->ctx);
-        n->kind = EVAL_NODE_BINARY;
+        Eval_Node *n     = eval_new_node(p->pool, p->expr, t.pos, p->ctx);
+        n->kind         = EVAL_NODE_BINARY;
         n->as.binary.op = t.kind;
-        n->as.binary.l = left;
-        n->as.binary.r = right;
+        n->as.binary.l  = left;
+        n->as.binary.r  = right;
         return n;
     }
     return left;
@@ -183,10 +179,10 @@ static inline Eval_Node *eval_parse_unary(Eval_Parser *p) {
     if (t.kind == '!' || t.kind == '-') {
         eval_parser_take(p);
         Eval_Node *child = eval_parse_pow(p);
-        Eval_Node *n = eval_new_node(p->pool, p->expr, cur_pos, p->ctx);
-        n->kind = EVAL_NODE_UNARY;
+        Eval_Node *n     = eval_new_node(p->pool, p->expr, cur_pos, p->ctx);
+        n->kind        = EVAL_NODE_UNARY;
         n->as.unary.op = t.kind;
-        n->as.unary.a = child;
+        n->as.unary.a  = child;
         return n;
     }
     return eval_parse_pow(p);
@@ -197,13 +193,13 @@ static inline Eval_Node *eval_parse_mul(Eval_Parser *p) {
     while (true) {
         Eval_TokenKind k = eval_parser_peek(p).kind;
         if (k != '*' && k != '/' && k != '%') break;
-        Eval_Token op = eval_parser_take(p);
+        Eval_Token op    = eval_parser_take(p);
         Eval_Node *right = eval_parse_unary(p);
-        Eval_Node *n = eval_new_node(p->pool, p->expr, op.pos, p->ctx);
-        n->kind = EVAL_NODE_BINARY;
+        Eval_Node *n     = eval_new_node(p->pool, p->expr, op.pos, p->ctx);
+        n->kind         = EVAL_NODE_BINARY;
         n->as.binary.op = op.kind;
-        n->as.binary.l = left;
-        n->as.binary.r = right;
+        n->as.binary.l  = left;
+        n->as.binary.r  = right;
         left = n;
     }
     return left;
@@ -214,13 +210,13 @@ static inline Eval_Node *eval_parse_add(Eval_Parser *p) {
     while (true) {
         Eval_TokenKind k = eval_parser_peek(p).kind;
         if (k != '+' && k != '-') break;
-        Eval_Token op = eval_parser_take(p);
+        Eval_Token op    = eval_parser_take(p);
         Eval_Node *right = eval_parse_mul(p);
-        Eval_Node *n = eval_new_node(p->pool, p->expr, op.pos, p->ctx);
-        n->kind = EVAL_NODE_BINARY;
+        Eval_Node *n     = eval_new_node(p->pool, p->expr, op.pos, p->ctx);
+        n->kind         = EVAL_NODE_BINARY;
         n->as.binary.op = op.kind;
-        n->as.binary.l = left;
-        n->as.binary.r = right;
+        n->as.binary.l  = left;
+        n->as.binary.r  = right;
         left = n;
     }
     return left;
@@ -233,13 +229,13 @@ static inline bool eval_is_cmp(Eval_TokenKind k) {
 static inline Eval_Node *eval_parse_cmp(Eval_Parser *p) {
     Eval_Node *left = eval_parse_add(p);
     if (!eval_is_cmp(eval_parser_peek(p).kind)) return left;
-    Eval_Token op = eval_parser_take(p);
+    Eval_Token op    = eval_parser_take(p);
     Eval_Node *right = eval_parse_add(p);
-    Eval_Node *n = eval_new_node(p->pool, p->expr, op.pos, p->ctx);
-    n->kind = EVAL_NODE_BINARY;
+    Eval_Node *n     = eval_new_node(p->pool, p->expr, op.pos, p->ctx);
+    n->kind         = EVAL_NODE_BINARY;
     n->as.binary.op = op.kind;
-    n->as.binary.l = left;
-    n->as.binary.r = right;
+    n->as.binary.l  = left;
+    n->as.binary.r  = right;
     if (eval_is_cmp(eval_parser_peek(p).kind)) {
         eval_error("chained comparisons are not supported; use '&' to combine (e.g., A<B & B<C)",
                    p->expr, eval_parser_peek(p).pos, p->ctx);
@@ -251,13 +247,13 @@ static inline Eval_Node *eval_parse_and(Eval_Parser *p) {
     Eval_Node *left = eval_parse_cmp(p);
     while (true) {
         if (eval_parser_peek(p).kind != '&') break;
-        Eval_Token op = eval_parser_take(p);
+        Eval_Token op    = eval_parser_take(p);
         Eval_Node *right = eval_parse_cmp(p);
-        Eval_Node *n = eval_new_node(p->pool, p->expr, op.pos, p->ctx);
-        n->kind = EVAL_NODE_BINARY;
+        Eval_Node *n     = eval_new_node(p->pool, p->expr, op.pos, p->ctx);
+        n->kind         = EVAL_NODE_BINARY;
         n->as.binary.op = op.kind;
-        n->as.binary.l = left;
-        n->as.binary.r = right;
+        n->as.binary.l  = left;
+        n->as.binary.r  = right;
         left = n;
     }
     return left;
@@ -267,13 +263,13 @@ static inline Eval_Node *eval_parse_or(Eval_Parser *p) {
     Eval_Node *left = eval_parse_and(p);
     while (true) {
         if (eval_parser_peek(p).kind != '|') break;
-        Eval_Token op = eval_parser_take(p);
+        Eval_Token op    = eval_parser_take(p);
         Eval_Node *right = eval_parse_and(p);
-        Eval_Node *n = eval_new_node(p->pool, p->expr, op.pos, p->ctx);
-        n->kind = EVAL_NODE_BINARY;
+        Eval_Node *n     = eval_new_node(p->pool, p->expr, op.pos, p->ctx);
+        n->kind         = EVAL_NODE_BINARY;
         n->as.binary.op = op.kind;
-        n->as.binary.l = left;
-        n->as.binary.r = right;
+        n->as.binary.l  = left;
+        n->as.binary.r  = right;
         left = n;
     }
     return left;
@@ -284,22 +280,19 @@ static inline Eval_Node *eval_parse_ternary(Eval_Parser *p) {
     if (eval_parser_peek(p).kind != '?') return cond;
     Eval_Token q = eval_parser_take(p);
     Eval_Node *t = eval_parse_or(p);
-    if (eval_parser_peek(p).kind != ':') {
+    if (eval_parser_peek(p).kind != ':')
         eval_error("expected ':'", p->expr, eval_parser_peek(p).pos, p->ctx);
-    }
     eval_parser_take(p);
     Eval_Node *f = eval_parse_or(p);
     Eval_Node *n = eval_new_node(p->pool, p->expr, q.pos, p->ctx);
-    n->kind = EVAL_NODE_TERNARY;
+    n->kind         = EVAL_NODE_TERNARY;
     n->as.ternary.c = cond;
     n->as.ternary.t = t;
     n->as.ternary.f = f;
     return n;
 }
 
-static inline bool truthy(double x) {
-    return x != 0.0;
-}
+static inline bool truthy(double x) { return x != 0.0; }
 
 static inline bool is_equal_float(double a, double b) {
     const double eps = 1e-9;
@@ -316,7 +309,7 @@ static inline double eval_node(const Eval_Node *n, const double vars[52], const 
             if (n->as.unary.op == '-') return -a;
             eval_error("unknown unary op", expr, n->pos, ctx);
         }
-	break;
+        break;
         case EVAL_NODE_BINARY: {
             Eval_TokenKind op = n->as.binary.op;
             if (op == '&') {
@@ -371,13 +364,13 @@ static inline double eval_node(const Eval_Node *n, const double vars[52], const 
                 eval_error("unknown binary op", expr, n->pos, ctx);
             }
         }
-	break;
+        break;
         case EVAL_NODE_TERNARY: {
             double cond = eval_node(n->as.ternary.c, vars, expr, ctx);
             if (truthy(cond)) return eval_node(n->as.ternary.t, vars, expr, ctx);
             return eval_node(n->as.ternary.f, vars, expr, ctx); 
         }
-	break;
+        break;
     }
     eval_error("unknown node kind", expr, n->pos, ctx);
     return 0.0;
@@ -394,11 +387,11 @@ static inline double eval_run(const char *expr, const double vars[52], const cha
     }
     Eval_NodePool pool = {0};
     Eval_Parser p = {
-        .pool = &pool,
+        .pool   = &pool,
         .tokens = tokens, .token_cnt = token_cnt,
-        .ctx = ctx,
-        .expr = expr,
-        .cur = 0 
+        .ctx    = ctx,
+        .expr   = expr,
+        .cur    = 0
     };
     Eval_Node *root = eval_parse_ternary(&p);
     if (eval_parser_peek(&p).kind != eval_tok_eof)
@@ -406,4 +399,4 @@ static inline double eval_run(const char *expr, const double vars[52], const cha
     return eval_node(root, vars, expr, ctx);
 }
 
-#endif
+#endif // PUNCTA_EVAL_H_
