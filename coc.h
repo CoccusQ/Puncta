@@ -286,7 +286,7 @@ COCDEF void coc_str_to_heap(Coc_String *str, size_t n) {
     size_t size = str->sso.size;
     size_t cap = n;
     if (cap < COC_SSO_CAP * 2) cap = COC_SSO_CAP * 2;
-    char *buf = malloc(cap);
+    char *buf = COC_MALLOC(cap);
     COC_ASSERT(buf != NULL && "Malloc failed");
     memcpy(buf, str->sso.items, str->sso.size);
     str->items    = buf;
