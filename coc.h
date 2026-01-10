@@ -1,13 +1,13 @@
-// coc.h - version 1.3.8 (2026-01-10)
+// coc.h - version 1.4.0 (2026-01-10)
 #ifndef COC_H_
 #define COC_H_
 
 #define COC_VERSION_MAJOR 1
-#define COC_VERSION_MINOR 3
-#define COC_VERSION_PATCH 8
+#define COC_VERSION_MINOR 4
+#define COC_VERSION_PATCH 0
 
 #ifndef COCDEF
-#define COCDEF static inline
+   #define COCDEF static inline
 #endif // COCDEF
 
 #ifndef COC_MALLOC
@@ -97,6 +97,7 @@ COCDEF void coc_log_time() {
 }
 
 COCDEF void coc_log_core(int level, const char *fmt, va_list args) {
+    COC_ASSERT(level >= COC_DEBUG && level <= COC_NONE);
     if ((int)coc_global_log_config.min_level > level) return;
     if (coc_global_log_config.use_time ||
 	coc_global_log_config.use_date )
@@ -112,9 +113,9 @@ COCDEF void coc_log_core(int level, const char *fmt, va_list args) {
     default: break;
     }
     if (coc_global_log_config.use_color && coc_global_log_config.out == COC_LOG_OUT)
-	fprintf(COC_LOG_OUT, "[%s%s" COC_LOG_RESET "] ", color, tag);
+        fprintf(COC_LOG_OUT, "[%s%s" COC_LOG_RESET "] ", color, tag);
     else
-	fprintf(coc_global_log_config.out, "[%s] ", tag);
+        fprintf(coc_global_log_config.out, "[%s] ", tag);
     vfprintf(coc_global_log_config.out, fmt, args);
     fprintf(coc_global_log_config.out, "\n");
     if (level >= COC_WARNING) fflush(coc_global_log_config.out);
@@ -238,60 +239,163 @@ COCDEF Coc_Log_Level coc_log_level_from_cstr(const char *cstr) {
     (src)->items    = NULL;            \
 } while (0)
 
+#define COC_SSO_CAP (sizeof(char *) + sizeof(size_t) * 2 - sizeof(uint8_t) - 1)
+
 typedef struct Coc_String {
-    char    *items;
-    size_t   size;
-    size_t   capacity;
-    uint32_t hash;          // cached hash value
+    union {
+        struct {
+            char   *items;
+            size_t  size;
+            size_t  capacity;
+        };
+        struct {
+            uint8_t size;
+            char    items[COC_SSO_CAP + 1];
+        } sso;
+    };
+    uint32_t hash;
     bool     is_hash;
+    bool     not_sso;
 } Coc_String;
 
-COCDEF void coc_str_reserve(Coc_String *str, size_t n) {
-    COC_ASSERT((str) != NULL);
-    coc_vec_grow(str, n);
+COCDEF char *coc_str_data(Coc_String *str) {
+    COC_ASSERT(str != NULL);
+    return str->not_sso ? str->items : str->sso.items;
 }
 
+COCDEF size_t coc_str_size(Coc_String *str) {
+    COC_ASSERT(str != NULL);
+    return str->not_sso ? str->size : str->sso.size;
+}
+
+COCDEF size_t coc_str_capacity(Coc_String *str) {
+    COC_ASSERT(str != NULL);
+    return str->not_sso ? str->capacity : COC_SSO_CAP; 
+}
+
+COCDEF bool coc_str_eq(Coc_String *a, Coc_String *b) {
+    COC_ASSERT(a != NULL);
+    COC_ASSERT(b != NULL);
+    size_t size = coc_str_size(a); 
+    return size == coc_str_size(b) &&
+           memcmp(coc_str_data(a), coc_str_data(b), size) == 0;
+}
+
+COCDEF void coc_str_to_heap(Coc_String *str, size_t n) {
+    COC_ASSERT(!str->not_sso);
+    size_t size = str->sso.size;
+    size_t cap = n;
+    if (cap < COC_SSO_CAP * 2) cap = COC_SSO_CAP * 2;
+    char *buf = malloc(cap);
+    COC_ASSERT(buf != NULL && "Malloc failed");
+    memcpy(buf, str->sso.items, str->sso.size);
+    str->items    = buf;
+    str->size     = size;
+    str->capacity = cap;
+    str->not_sso  = true;
+}
+
+COCDEF void coc_str_ensure(Coc_String *str, size_t add) {
+    COC_ASSERT(str != NULL);
+    size_t need = coc_str_size(str) + add;
+    if (need <= coc_str_capacity(str)) return;
+    if (str->not_sso) coc_vec_grow(str, need);
+    else coc_str_to_heap(str, need);
+}
+
+COCDEF void coc_str_reserve(Coc_String *str, size_t n) {
+    COC_ASSERT(str != NULL);
+    if (str->not_sso) {
+        coc_vec_grow(str, n);
+    } else {
+        if (n > COC_SSO_CAP) coc_str_to_heap(str, n);
+    }
+}
+
+COCDEF void coc_str_push(Coc_String *str, char c) {
+    COC_ASSERT(str != NULL);
+    coc_str_ensure(str, 1);
+    if (str->not_sso) str->items[str->size++] = c;
+    else str->sso.items[str->sso.size++] = c;
+    str->is_hash = false;
+}
+    
+COCDEF char coc_str_pop(Coc_String *str) {
+    COC_ASSERT(str != NULL);
+    COC_ASSERT(coc_str_size(str) > 0);
+    char c = '\0';
+    if (str->not_sso) c = str->items[--str->size];
+    else c = str->sso.items[--str->sso.size];
+    str->is_hash = false;
+    return c;
+}
+/*
+COCDEF char coc_str_back(Coc_String *str) {
+    COC_ASSERT(str != NULL);
+    COC_ASSERT(coc_str_size(str) > 0);
+    if (str->not_sso) return str->items[--str->size];
+    else return str->sso.items[--str->sso.size];
+}
+*/
 COCDEF void coc_str_append(Coc_String *str, const char *cstr) {
-    COC_ASSERT((str) != NULL);
-    COC_ASSERT((cstr) != NULL);
-    const char *s = cstr;
-    size_t len = strlen(s);
-    coc_vec_append_many(str, s, len);
+    COC_ASSERT(str != NULL);
+    COC_ASSERT(cstr != NULL);
+    size_t len = strlen(cstr);
+    coc_str_ensure(str, len);
+    char *dst = coc_str_data(str);
+    memcpy(dst + coc_str_size(str), cstr, len);
+    if (str->not_sso) str->size += len;
+    else str->sso.size += len;
     str->is_hash = false;
 }
 
 COCDEF void coc_str_append_null(Coc_String *str) {
-    COC_ASSERT((str) != NULL);
-    coc_vec_append(str, '\0');
+    COC_ASSERT(str != NULL);
+    if (str->not_sso) coc_vec_append(str, '\0');
+    else str->sso.items[str->sso.size] = '\0';
 }
 
 COCDEF void coc_str_remove_null(Coc_String *str) {
-    COC_ASSERT((str) != NULL);
-    COC_ASSERT((str)->size > 0);
-    while (str->items[str->size - 1] == '\0') str->size--;
+    COC_ASSERT(str != NULL);
+    if (str->not_sso) {
+        while (str->size > 0 && str->items[str->size - 1] == '\0')
+            str->size--;
+    } else {
+        while (str->sso.size > 0 && str->sso.items[str->sso.size - 1] == '\0')
+            str->sso.size--;
+    }
 }
 
 COCDEF void coc_str_free(Coc_String *str) {
-    COC_ASSERT((str) != NULL);
-    coc_vec_free(str);
+    COC_ASSERT(str != NULL);
+    if (str->not_sso) coc_vec_free(str);
+    *str = (Coc_String){0};
 }
 
 COCDEF Coc_String coc_str_copy(Coc_String *src) {
-    COC_ASSERT((src) != NULL);
+    COC_ASSERT(src != NULL);
     Coc_String dst = {0};
-    coc_vec_copy(&dst, src);
+    dst.not_sso  = src->not_sso;
+    dst.is_hash = src->is_hash;
+    dst.hash    = src->hash;
+    if (src->not_sso) {
+        coc_vec_copy(&dst, src);
+    } else {
+        memcpy(dst.sso.items, src->sso.items, src->sso.size);
+        dst.sso.size = src->sso.size;
+    }
     return dst;
 }
 
 COCDEF Coc_String coc_str_move(Coc_String *src) {
-    COC_ASSERT((src) != NULL);
-    Coc_String dst = {0};
-    coc_vec_move(&dst, src);
+    COC_ASSERT(src != NULL);
+    Coc_String dst = *src;
+    *src = (Coc_String){0};
     return dst;
 }
 
 COCDEF int coc_read_entire_file(const char *path, Coc_String *buf) {
-    COC_ASSERT((buf) != NULL);
+    COC_ASSERT(buf != NULL);
     int result = 0;
     FILE *fp = fopen(path, "rb");
     if (fp == NULL) coc_defer(errno);
@@ -300,6 +404,8 @@ COCDEF int coc_read_entire_file(const char *path, Coc_String *buf) {
     if (file_size < 0) coc_defer(errno);
     if (fseek(fp, 0, SEEK_SET) < 0) coc_defer(errno);
 
+    size_t need = (size_t)file_size + coc_str_size(buf);
+    if (!buf->not_sso) coc_str_to_heap(buf, need);
     size_t new_size = buf->size + file_size;
     if (new_size > buf->capacity) {
         buf->items = COC_REALLOC(buf->items, new_size);
@@ -332,10 +438,13 @@ COCDEF uint32_t coc_hash_fnv1a(Coc_String *key) {
     COC_ASSERT((key) != NULL);
     if (key->is_hash) return key->hash;
     uint32_t hash = 2166136261u;
-    for (size_t i = 0; i < key->size; i++) {
-        hash ^= (unsigned char)key->items[i];
+    char  *data = coc_str_data(key);
+    size_t size = coc_str_size(key);
+    for (size_t i = 0; i < size; i++) {
+        hash ^= (unsigned char)data[i];
         hash *= 16777619u;
     }
+    key->hash    = hash;
     key->is_hash = true;
     return hash;
 }
@@ -365,27 +474,26 @@ COCDEF uint32_t coc_hash_fnv1a(Coc_String *key) {
     }                                                                              \
 } while (0)
 
-#define coc_ht_insert_move(ht, k, v) do {                                          \
-    COC_ASSERT((ht) != NULL);                                                      \
-    COC_ASSERT((k) != NULL);                                                       \
-    coc_ht_resize(ht, (ht)->size + 1);                                             \
-    uint32_t idx = coc_hash_value(k) % (ht)->capacity;                             \
-    bool found = false;                                                            \
-    while ((ht)->items[idx].is_used) {                                             \
-        if (((ht)->items[idx].key.size == (k)->size) &&                            \
-            memcmp((ht)->items[idx].key.items, (k)->items, (k)->size) == 0) {      \
-            (ht)->items[idx].value = (v);                                          \
-            coc_str_free(k);                                                       \
-            found = true;                                                          \
-            break;                                                                 \
-        }                                                                          \
-        idx = (idx + 1) % (ht)->capacity;                                          \
-    }                                                                              \
-    if (found) break;                                                              \
-    (ht)->items[idx].key     = coc_str_move(k);                                    \
-    (ht)->items[idx].value   = (v);                                                \
-    (ht)->items[idx].is_used = true;                                               \
-    (ht)->size++;                                                                  \
+#define coc_ht_insert_move(ht, k, v) do {                    \
+    COC_ASSERT((ht) != NULL);                                \
+    COC_ASSERT((k) != NULL);                                 \
+    coc_ht_resize(ht, (ht)->size + 1);                       \
+    uint32_t __coc_idx = coc_hash_value(k) % (ht)->capacity; \
+    bool found = false;                                      \
+    while ((ht)->items[__coc_idx].is_used) {                 \
+        if (coc_str_eq(&(ht)->items[__coc_idx].key, k)) {    \
+            (ht)->items[__coc_idx].value = (v);              \
+            coc_str_free(k);                                 \
+            found = true;                                    \
+            break;                                           \
+        }                                                    \
+        __coc_idx = (__coc_idx + 1) % (ht)->capacity;        \
+    }                                                        \
+    if (found) break;                                        \
+    (ht)->items[__coc_idx].key     = coc_str_move(k);        \
+    (ht)->items[__coc_idx].value   = (v);                    \
+    (ht)->items[__coc_idx].is_used = true;                   \
+    (ht)->size++;                                            \
 } while (0)
 
 #define coc_ht_insert_copy(ht, k, v) do {       \
@@ -403,26 +511,25 @@ COCDEF uint32_t coc_hash_fnv1a(Coc_String *key) {
     coc_ht_insert_move(ht, &__coc_new_key, v); \
 } while (0)
 
-#define coc_ht_find(ht, k, v_ptr) do {                                              \
-    COC_ASSERT((ht) != NULL);                                                       \
-    COC_ASSERT((k) != NULL);                                                        \
-    if ((ht)->size == 0) {                                                          \
-        (v_ptr) = NULL;                                                             \
-        break;                                                                      \
-    }                                                                               \
-    uint32_t __coc_idx = coc_hash_value(k) % (ht)->capacity;                        \
-    for (size_t i = 0; i < (ht)->capacity; i++) {                                   \
-        if (!(ht)->items[__coc_idx].is_used) {                                      \
-            (v_ptr) = NULL;                                                         \
-            break;                                                                  \
-        }                                                                           \
-        if ((ht)->items[__coc_idx].key.size == (k)->size &&                         \
-            memcmp((ht)->items[__coc_idx].key.items, (k)->items, (k)->size) == 0) { \
-            (v_ptr) = &(ht)->items[__coc_idx].value;                                \
-            break;                                                                  \
-        }                                                                           \
-        __coc_idx = (__coc_idx + 1) % (ht)->capacity;                               \
-    }                                                                               \
+#define coc_ht_find(ht, k, v_ptr) do {                       \
+    COC_ASSERT((ht) != NULL);                                \
+    COC_ASSERT((k) != NULL);                                 \
+    if ((ht)->size == 0) {                                   \
+        (v_ptr) = NULL;                                      \
+        break;                                               \
+    }                                                        \
+    uint32_t __coc_idx = coc_hash_value(k) % (ht)->capacity; \
+    for (size_t i = 0; i < (ht)->capacity; i++) {            \
+        if (!(ht)->items[__coc_idx].is_used) {               \
+            (v_ptr) = NULL;                                  \
+            break;                                           \
+        }                                                    \
+        if (coc_str_eq(&(ht)->items[__coc_idx].key, k)) {    \
+            (v_ptr) = &(ht)->items[__coc_idx].value;         \
+            break;                                           \
+        }                                                    \
+        __coc_idx = (__coc_idx + 1) % (ht)->capacity;        \
+    }                                                        \
 } while (0)
 
 #define coc_ht_find_cstr(ht, cstr, v_ptr) do { \
@@ -430,9 +537,12 @@ COCDEF uint32_t coc_hash_fnv1a(Coc_String *key) {
     COC_ASSERT((cstr) != NULL);                \
     size_t __coc_len = strlen(cstr);           \
     Coc_String __coc_target_key = {            \
-	.items = (char *)(cstr),               \
-	.size  = __coc_len,                    \
-	.capacity = __coc_len + 1              \
+        .items    = (char *)(cstr),            \
+        .size     = __coc_len,                 \
+        .capacity = __coc_len + 1,             \
+        .hash     = 0,                         \
+        .is_hash  = false,                     \
+        .not_sso  = true                       \
     };                                         \
     coc_ht_find(ht, &__coc_target_key, v_ptr); \
 } while (0)
@@ -464,6 +574,8 @@ COCDEF size_t coc_kv_split(const char *arg, const char **value) {
 }
 
 COCDEF bool coc_kv_match(const char *arg, size_t arg_len, const char *option) {
+    COC_ASSERT(arg != NULL);
+    COC_ASSERT(option != NULL);
     size_t opt_len = strlen(option);
     return arg_len == opt_len && strncmp(arg, option, opt_len) == 0;
 }
@@ -478,6 +590,18 @@ Coc_Log_Config coc_global_log_config = {0};
 
 /*
 Recent Revision History:
+
+1.4.0 (2026-01-10)
+
+Fixed:
+- invalid log level assert
+- hash cache bug
+
+Added:
+- COC_SSO_CAP
+- not_sso, struct sso in Coc_String
+- coc_str_data(), coc_str_size(), coc_str_capacity(), coc_str_eq(), coc_str_ensure()
+- coc_str_push(), coc_str_pop()
 
 1.3.8 (2026-01-10)
 
