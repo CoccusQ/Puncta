@@ -1,10 +1,11 @@
-// puncta.h - version 1.0.6 (2026-01-10)
+// puncta.h - version 1.0.7 (2026-01-10)
+// required coc.h >= 1.4.0
 #ifndef PUNCTA_H_
 #define PUNCTA_H_
 
 #define PUNCTA_VERSION_MAJOR 1
 #define PUNCTA_VERSION_MINOR 0
-#define PUNCTA_VERSION_PATCH 6
+#define PUNCTA_VERSION_PATCH 7
 
 #include <math.h>
 #include <limits.h>
@@ -93,18 +94,18 @@ static inline void lexer_free(Lexer *l) {
 }
 
 static inline char lexer_peek(Lexer *l) {
-    if (l->pos >= l->src.size) return '\0';
-    return l->src.items[l->pos];
+    if (l->pos >= coc_str_size(&l->src)) return '\0';
+    return coc_str_data(&l->src)[l->pos];
 }
 
 static inline char lexer_peek2(Lexer *l) {
     if (l->pos + 1 >= l->src.size) return '\0';
-    return l->src.items[l->pos + 1];
+    return coc_str_data(&l->src)[l->pos + 1];
 }
 
 static inline char lexer_get(Lexer *l) {
     if (l->pos >= l->src.size) return '\0';
-    return l->src.items[l->pos++];
+    return coc_str_data(&l->src)[l->pos++];
 }
 
 static inline void skip_whitespace(Lexer *l) {
@@ -158,9 +159,9 @@ static inline Token lexer_next(Lexer *l) {
     if (c == '\0') return (Token){.kind = tok_eof, .line = l->line};
     if (isalpha(c) || c == '_') {
         Coc_String id = {0};
-        coc_vec_append(&id, lexer_get(l));
+        coc_str_push(&id, lexer_get(l));
         while (isalnum(lexer_peek(l)) || lexer_peek(l) == '_') {
-            coc_vec_append(&id, lexer_get(l));
+            coc_str_push(&id, lexer_get(l));
         }
         return (Token){.kind = tok_identifier, .text = coc_str_move(&id), .line = l->line};
     }
@@ -168,21 +169,21 @@ static inline Token lexer_next(Lexer *l) {
         Coc_String num = {0};
         bool is_float = false;
         bool is_hex = false;
-        if (lexer_peek(l) == '-') coc_vec_append(&num, lexer_get(l));
-        else if (lexer_peek(l) == '+') coc_vec_append(&num, lexer_get(l));
+        if (lexer_peek(l) == '-') coc_str_push(&num, lexer_get(l));
+        else if (lexer_peek(l) == '+') coc_str_push(&num, lexer_get(l));
         if (lexer_peek(l) == '0' && (lexer_peek2(l) == 'x' || lexer_peek2(l) == 'X')) {
             is_hex = true;
-            coc_vec_append(&num, lexer_get(l));
-            coc_vec_append(&num, lexer_get(l));
+            coc_str_push(&num, lexer_get(l));
+            coc_str_push(&num, lexer_get(l));
         }
         while (isdigit(lexer_peek(l)) || (is_hex && isxdigit(lexer_peek(l)))) {
-            coc_vec_append(&num, lexer_get(l));
+            coc_str_push(&num, lexer_get(l));
         }
         if (!is_hex && lexer_peek(l) == '.' && isdigit(lexer_peek2(l))) {
             is_float = true;
-            coc_vec_append(&num, lexer_get(l));
+            coc_str_push(&num, lexer_get(l));
             while (isdigit(lexer_peek(l))) {
-                coc_vec_append(&num, lexer_get(l));
+                coc_str_push(&num, lexer_get(l));
             }
         }
         char next_char = lexer_peek(l);
@@ -196,8 +197,8 @@ static inline Token lexer_next(Lexer *l) {
         char *end_ptr = NULL;
         errno = 0;
         if (is_float) {
-            double float_val = strtod(num.items, &end_ptr);
-            if (end_ptr == num.items) {
+            double float_val = strtod(coc_str_data(&num), &end_ptr);
+            if (end_ptr == coc_str_data(&num)) {
                 coc_log(COC_ERROR,
                         "Lexical error at line %d: invalid floating-point literal",
                         l->line);
@@ -218,8 +219,8 @@ static inline Token lexer_next(Lexer *l) {
                 .line = l->line
             };
         } else {
-            long long int_val = strtoll(num.items, &end_ptr, is_hex ? 16 : 10);
-            if (end_ptr == num.items) {
+            long long int_val = strtoll(coc_str_data(&num), &end_ptr, is_hex ? 16 : 10);
+            if (end_ptr == coc_str_data(&num)) {
                 coc_log(COC_ERROR,
                         "Lexical error at line %d: invalid %s integer literal",
                         l->line, is_hex ? "hexadecimal" : "decimal");
@@ -306,7 +307,7 @@ static inline Token lexer_next(Lexer *l) {
         return (Token){.kind = (TokenKind)lexer_get(l), .line = l->line};
     } else {
         Coc_String id = {0};
-        coc_vec_append(&id, lexer_get(l));
+        coc_str_push(&id, lexer_get(l));
         return (Token){.kind = tok_identifier, .text = coc_str_move(&id), .line = l->line};
     }
 }
@@ -496,7 +497,7 @@ static inline void parse_statement(Parser *p) {
         if (parser_accept(p, (TokenKind)'?')) {
             Token label = parser_expect(p, tok_identifier, "label");
             if (parser_accept(p, (TokenKind)';')) {
-            emit_jeq(p, first, second, label, line);
+                emit_jeq(p, first, second, label, line);
                 return;
             }
             parser_error("';' at the end of the statement", line);
@@ -504,7 +505,7 @@ static inline void parse_statement(Parser *p) {
 
         if (parser_accept(p, (TokenKind)'!')) {
             if (second.kind == tok_number)
-            parser_error("identifier (action name) before '!', but got number", line);
+                parser_error("identifier (action name) before '!', but got number", line);
             if (parser_accept(p, (TokenKind)'@')) {
                 Token extra = p->cur_tok;
                 if (extra.kind == tok_identifier || extra.kind == tok_number) {
@@ -608,7 +609,7 @@ static inline Number *vm_get_var(VM *vm, Coc_String *var_name) {
     if (value == NULL) {
         coc_str_append_null(var_name);
         coc_log(COC_ERROR, "Runtime error at line %d: variable '%s' not found",
-                vm_get_line_number(vm), var_name->items);
+                vm_get_line_number(vm), coc_str_data(var_name));
         exit(1);
     }
     return value;
@@ -620,7 +621,7 @@ static inline Action *vm_get_action(VM *vm, Coc_String *act_name) {
     if (act == NULL) {
         coc_str_append_null(act_name);
         coc_log(COC_ERROR, "Runtime error at line %d: action '%s' not found",
-                vm_get_line_number(vm), act_name->items);
+                vm_get_line_number(vm), coc_str_data(act_name));
         exit(1);
     }
     return act;
@@ -632,7 +633,7 @@ static inline int vm_get_label(VM *vm, Coc_String *label) {
     if (pos == NULL) {
         coc_str_append_null(label);
         coc_log(COC_ERROR, "Runtime error at line %d: label '%s' not found",
-                vm_get_line_number(vm), label->items);
+                vm_get_line_number(vm), coc_str_data(label));
         exit(1);
     }
     return *pos;
@@ -709,7 +710,7 @@ static inline void vm_check_labels(VM *vm) {
             coc_str_append_null(&inst->Label);
             coc_log(COC_ERROR,
                     "Semantic error at line %d: label '%s' not defined",
-                    inst->line, inst->Label.items);
+                    inst->line, coc_str_data(&inst->Label));
             exit(1);
         }
     }
@@ -916,17 +917,11 @@ static inline void act_eval(VM *vm, Number *n) {
     double vars[52];
     char expr[EVAL_EXPR_MAX + 2];
     int len = number_to_string(n, expr, sizeof(expr), "eval", vm_get_line_number(vm));
-    char buf[8];
-    Coc_String var_name = {
-        .capacity = sizeof(buf),
-        .items = buf,
-        .size = 0
-    };
     for (int i = 0; i < len; i++) {
+        Coc_String var_name = {0};
         char c = expr[i];
         if (isalpha(c)) {
-            var_name.size = 0;
-            coc_vec_append(&var_name, c);
+            coc_str_push(&var_name, c);
             Number *value = vm_get_var(vm, &var_name);
             int idx = isupper(c) ? c - 'A' : c - 'a' + 26;
             vars[idx] = value->is_float ? value->float_value : (double)value->int_value;
@@ -985,3 +980,95 @@ static inline VM *run_file(const char *filename, void (*register_user_actions)(V
 }
 
 #endif // PUNCTA_H_
+
+/*
+Recent Revision History:
+
+1.0.7 (2026-01-10)
+
+Fixed:
+- Compatibility with Coc_String APIs (coc.h v1.4.0)
+
+1.0.6 (2026-01-10)
+
+Changed:
+- Instruction struct memory layout
+
+1.0.5 (2026-01-08)
+
+Changed:
+- Number struct memory layout
+
+1.0.4 (2026-01-05)
+
+Fixed:
+- String literal handling (supports arbitrary encodings)
+
+1.0.3 (2025-12-31)
+
+Fixed:
+- '@' syntax sugar bug
+
+1.0.2 (2025-12-31)
+
+Added:
+- emit_assign(), emit_act(), emit_jmp(), emit_jeq(), emit_label(), emit_end()
+
+1.0.1 (2025-12-29)
+
+Added:
+- UNUSED macro
+
+1.0.0 (2025-12-28)
+
+Added:
+- Versioned release
+
+(2025-12-26)
+
+Added:
+- syntax sugars: `@value / @var`, `label#: / label#;`
+
+Removed:
+- Label placeholders in VM introductions
+
+(2025-12-18)
+
+Added:
+- VM signature to act interface
+- number_to_string()
+- act_putn(): no-newline numeric output
+
+Changed:
+- String storage order: big-endian -> little-endian
+
+(2025-12-16)
+
+Added:
+- Built-in actions:
+  act_double(), act_halve(), act_neg(), act_abs();
+  act_isodd(), act_isneg(); act_toint(); act_putl()
+- Semantic label checking
+- Nested comments
+
+Fixed:
+- Numeric literal validation in lexer
+
+(2025-12-15)
+
+Added:
+- Detailed error reporting
+- comment `()`
+- string literal `""`
+
+(2025-12-05)
+
+Added:
+- Hex literal support
+- act_puts(), print 64-bit integer as 8-byte strings
+- vm_get_var(), vm_get_action(), vm_get_label(), vm_call_label()
+
+Changed:
+- run_file() return VM pointer
+
+*/
