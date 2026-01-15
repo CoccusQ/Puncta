@@ -9,7 +9,7 @@
 #include <math.h>
 #include "coc.h"
 
-#define EVAL_EXPR_MAX 8
+#define EVAL_EXPR_MAX 16
 #define EVAL_NODE_MAX (2 * EVAL_EXPR_MAX + 8)
 #define EVAL_TOKEN_MAX EVAL_EXPR_MAX + 8
 

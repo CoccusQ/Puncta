@@ -1,22 +1,28 @@
-// puncta.h - version 1.0.7 (2026-01-10)
+// puncta.h - version 1.0.8 (2026-01-15)
 // required coc.h >= 1.4.0
 #ifndef PUNCTA_H_
 #define PUNCTA_H_
 
 #define PUNCTA_VERSION_MAJOR 1
 #define PUNCTA_VERSION_MINOR 0
-#define PUNCTA_VERSION_PATCH 7
+#define PUNCTA_VERSION_PATCH 8
 
 #include <math.h>
 #include <limits.h>
 #include "coc.h"
 #include "puncta_eval.h"
 
+#define STRING_LEN (16 - 2 * sizeof(bool))
+#define PACK_LEN   (sizeof(long long))
+#define EXTRA_LEN  (STRING_LEN - PACK_LEN)
+
 typedef struct Number {
     union {
         long long int_value;
         double    float_value;
     };
+    char extra[EXTRA_LEN];
+    bool is_extra;
     bool is_float;
 } Number;
 
@@ -42,8 +48,8 @@ static inline size_t number_to_string(const Number *n, char *buf, size_t buf_siz
     }
     uint64_t value = (uint64_t)n->int_value;
     size_t len = 0;
-    for (int i = 0; i <= 7; i++) {
-        unsigned char c = (value >> (i * 8)) & 0xFF;
+    for (size_t i = 0; i < PACK_LEN; i++) {
+        unsigned char c = (value >> (i * PACK_LEN)) & 0xFF;
         if (c == '\0') break;
         if (len >= buf_size) {
             coc_log(COC_ERROR,
@@ -52,6 +58,19 @@ static inline size_t number_to_string(const Number *n, char *buf, size_t buf_siz
             exit(1);
         }
         buf[len++] = c;
+    }
+    if (n->is_extra) {
+        for (size_t i = 0; i < EXTRA_LEN; i++) {
+            char c = n->extra[i];
+            if (c == '\0') break;
+            if (len >= buf_size) {
+                coc_log(COC_ERROR,
+                        "Runtime error at line %d: in action '%s': buffer too small for extra number-to-string conversion (need %zu bytes at least, have %zu)",
+                        line, who, len + 1, buf_size);
+                exit(1);
+            }
+            buf[len++] = c;
+        }
     }
     buf[len] = '\0';
     return len;
@@ -244,13 +263,14 @@ static inline Token lexer_next(Lexer *l) {
     }
     if (c == '"') {
         lexer_get(l);
-        uint64_t value = 0;
-        int len = 0;
+        Number num = {0};
+        size_t len = 0;
         while (lexer_peek(l) && lexer_peek(l) != '"') {
-            if (len >= 8) {
+            if (len >= PACK_LEN) num.is_extra = true;
+            if (len >= STRING_LEN) {
                 coc_log(COC_ERROR,
-                        "Lexical error at line %d: string literal too long (max 8 characters allowed)",
-                        l->line);
+                        "Lexical error at line %d: string literal too long (max %lld characters allowed)",
+                        l->line, STRING_LEN);
                 exit(1);
             }
             char ch = lexer_get(l);
@@ -284,7 +304,8 @@ static inline Token lexer_next(Lexer *l) {
                     exit(1);
                 }
             }
-            value |= ((uint64_t)ch & 0xFF) << ((len++) * 8);
+            if (!num.is_extra) num.int_value |= ((uint64_t)ch & 0xFF) << ((len++) * PACK_LEN);
+            else num.extra[(len++) - PACK_LEN] = ch;
         }
         if (lexer_peek(l) != '"') {
             coc_log(COC_ERROR, 
@@ -294,12 +315,9 @@ static inline Token lexer_next(Lexer *l) {
         }
         lexer_get(l);
         return (Token){
-            .kind = tok_number,
-            .number = (Number){
-                .int_value = value,
-                .is_float  = false
-            },
-            .line = l->line
+            .kind   = tok_number,
+            .number = num,
+            .line   = l->line
         };
     }
     
@@ -884,16 +902,21 @@ static inline void act_putc(VM *vm, Number *n) {
 
 static inline void act_gets(VM *vm, Number *n) {
     COC_UNUSED(vm);
-    char buf[10];
+    char buf[32];
     if (!fgets(buf, sizeof(buf), stdin)) {
         coc_log(COC_FATAL, "Input error: fgets() failed");
         exit(1);
     }
     uint64_t value = 0;
-    for (int i = 0; buf[i] != '\0'; i++)
-        value = (value << 8) | (uint64_t)buf[i];
+    bool is_extra = false;
+    size_t len = 0;
+    for (; buf[len] != '\0'; len++) {
+        if (!is_extra) value = (value << PACK_LEN) | (uint64_t)buf[len];
+        else n->extra[len - PACK_LEN] = buf[len];
+    }
     n->int_value = value;
-    n->is_float = false;
+    n->is_extra  = is_extra;
+    n->is_float  = false;
 }
 
 static inline void act_puts(VM *vm, Number *n) {
@@ -916,8 +939,8 @@ static inline void act_putx(VM *vm, Number *n) {
 static inline void act_eval(VM *vm, Number *n) {
     double vars[52];
     char expr[EVAL_EXPR_MAX + 2];
-    int len = number_to_string(n, expr, sizeof(expr), "eval", vm_get_line_number(vm));
-    for (int i = 0; i < len; i++) {
+    size_t len = number_to_string(n, expr, sizeof(expr), "eval", vm_get_line_number(vm));
+    for (size_t i = 0; i < len; i++) {
         Coc_String var_name = {0};
         char c = expr[i];
         if (isalpha(c)) {
@@ -983,6 +1006,15 @@ static inline VM *run_file(const char *filename, void (*register_user_actions)(V
 
 /*
 Recent Revision History:
+
+1.0.8 (2026-01-15)
+
+Added:
+- STRING_LEN, PACK_LEN, EXTRA_LEN macros
+- extra[EXTRA_LEN], is_extra (in Number struct)
+
+Changed:
+- number_to_string(), act_gets(), compatible with new Number struct
 
 1.0.7 (2026-01-10)
 
