@@ -1,15 +1,15 @@
-// puncta_eval.h - version 1.0.2 (2026-01-10)
+// puncta_eval.h - version 1.0.3 (2026-01-16)
 #ifndef PUNCTA_EVAL_H_
 #define PUNCTA_EVAL_H_
 
 #define PUNCTA_EVAL_VERSION_MAJOR 1
 #define PUNCTA_EVAL_VERSION_MINOR 0
-#define PUNCTA_EVAL_VERSION_PATCH 2
+#define PUNCTA_EVAL_VERSION_PATCH 3
 
 #include <math.h>
 #include "coc.h"
 
-#define EVAL_EXPR_MAX 16
+#define EVAL_EXPR_MAX 32
 #define EVAL_NODE_MAX (2 * EVAL_EXPR_MAX + 8)
 #define EVAL_TOKEN_MAX EVAL_EXPR_MAX + 8
 
@@ -27,7 +27,9 @@ typedef enum Eval_TokenKind {
     eval_tok_gt  = '>',
     eval_tok_lt  = '<',
     eval_tok_eq  = '=',
-    eval_tok_neq = '#'
+    eval_tok_neq = '#',
+    eval_tok_lpr = '(',
+    eval_tok_rpr = ')'
 } Eval_TokenKind;
 
 typedef struct Eval_Token {
@@ -67,7 +69,7 @@ static inline Eval_Token eval_next_token(const char *s, int *pos, const char *ct
         };
     }
     (*pos)++;
-    if (strchr("+-*/%><#=!&|?:^", c) == NULL) {
+    if (strchr("+-*/%><#=!&|?:^()", c) == NULL) {
         coc_log(COC_ERROR,
                 "%sEval error at pos %d in \"%s\": unexpected character %c",
                 ctx, *pos, s, c);
@@ -140,6 +142,15 @@ static inline Eval_Node *eval_parse_ternary(Eval_Parser *p);
 static inline Eval_Node *eval_parse_factor(Eval_Parser *p) {
     Eval_Token t = eval_parser_peek(p);
     int cur_pos = t.pos;
+    if (t.kind == eval_tok_lpr) {
+        eval_parser_take(p);
+        Eval_Node *n = eval_parse_ternary(p);
+        if (eval_parser_peek(p).kind != eval_tok_rpr) {
+            eval_error("expected ')'", p->expr, eval_parser_peek(p).pos, p->ctx);
+        }
+        eval_parser_take(p);
+        return n;
+    }
     if (t.kind == eval_tok_var) {
         eval_parser_take(p);
         Eval_Node *n = eval_new_node(p->pool, p->expr, cur_pos, p->ctx);
@@ -279,11 +290,11 @@ static inline Eval_Node *eval_parse_ternary(Eval_Parser *p) {
     Eval_Node *cond = eval_parse_or(p);
     if (eval_parser_peek(p).kind != '?') return cond;
     Eval_Token q = eval_parser_take(p);
-    Eval_Node *t = eval_parse_or(p);
+    Eval_Node *t = eval_parse_ternary(p);
     if (eval_parser_peek(p).kind != ':')
         eval_error("expected ':'", p->expr, eval_parser_peek(p).pos, p->ctx);
     eval_parser_take(p);
-    Eval_Node *f = eval_parse_or(p);
+    Eval_Node *f = eval_parse_ternary(p);
     Eval_Node *n = eval_new_node(p->pool, p->expr, q.pos, p->ctx);
     n->kind         = EVAL_NODE_TERNARY;
     n->as.ternary.c = cond;
@@ -400,3 +411,20 @@ static inline double eval_run(const char *expr, const double vars[52], const cha
 }
 
 #endif // PUNCTA_EVAL_H_
+
+/*
+Recent Revision History:
+
+1.0.3 (2026-01-16)
+
+Added:
+- eval_tok_lpr, eval_tok_rpr (in Eval_TokenKind)
+- parenthese `()`
+- right-associativity for ternary `?:`
+
+1.0.0 (2025-12-28)
+
+Added:
+- Version release
+
+*/
