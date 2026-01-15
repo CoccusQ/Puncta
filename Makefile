@@ -4,6 +4,8 @@ TARGET = puncta.exe
 SRC    = puncta.c
 
 all: $(TARGET)
+
+$(TARGET):
 	$(CC) $(CFLAGS) -o $(TARGET) $(SRC)
 
 .PHONY: clean
