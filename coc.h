@@ -1,10 +1,10 @@
-// coc.h - version 1.4.0 (2026-01-10)
+// coc.h - version 1.4.1 (2026-01-16)
 #ifndef COC_H_
 #define COC_H_
 
 #define COC_VERSION_MAJOR 1
 #define COC_VERSION_MINOR 4
-#define COC_VERSION_PATCH 0
+#define COC_VERSION_PATCH 1
 
 #ifndef COCDEF
    #define COCDEF static inline
