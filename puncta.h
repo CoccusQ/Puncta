@@ -377,7 +377,7 @@ typedef struct Parser {
 static inline Parser *parser_init(Lexer *lex) {
     Parser *parser = (Parser *)COC_MALLOC(sizeof(Parser));
     if (parser == NULL) {
-    coc_log(COC_FATAL, "Parser init: malloc() failed");
+        coc_log(COC_FATAL, "Parser init: malloc() failed");
         exit(1);
     }
     parser->lex          = lex;

@@ -320,33 +320,37 @@ COCDEF void coc_str_push(Coc_String *str, char c) {
     str->is_hash = false;
 }
     
-COCDEF char coc_str_pop(Coc_String *str) {
+COCDEF void coc_str_pop(Coc_String *str) {
     COC_ASSERT(str != NULL);
     COC_ASSERT(coc_str_size(str) > 0);
-    char c = '\0';
-    if (str->not_sso) c = str->items[--str->size];
-    else c = str->sso.items[--str->sso.size];
+    if (str->not_sso) --str->size;
+    else --str->sso.size;
     str->is_hash = false;
-    return c;
 }
-/*
+
 COCDEF char coc_str_back(Coc_String *str) {
     COC_ASSERT(str != NULL);
     COC_ASSERT(coc_str_size(str) > 0);
-    if (str->not_sso) return str->items[--str->size];
-    else return str->sso.items[--str->sso.size];
+    if (str->not_sso) return str->items[str->size - 1];
+    else return str->sso.items[str->sso.size - 1];
 }
-*/
-COCDEF void coc_str_append(Coc_String *str, const char *cstr) {
+
+COCDEF void coc_str_append_many(Coc_String *str, const char *cstr, size_t len) {
     COC_ASSERT(str != NULL);
     COC_ASSERT(cstr != NULL);
-    size_t len = strlen(cstr);
     coc_str_ensure(str, len);
     char *dst = coc_str_data(str);
     memcpy(dst + coc_str_size(str), cstr, len);
     if (str->not_sso) str->size += len;
     else str->sso.size += len;
     str->is_hash = false;
+}
+
+COCDEF void coc_str_append(Coc_String *str, const char *cstr) {
+    COC_ASSERT(str != NULL);
+    COC_ASSERT(cstr != NULL);
+    size_t len = strlen(cstr);
+    coc_str_append_many(str, cstr, len);
 }
 
 COCDEF void coc_str_append_null(Coc_String *str) {
@@ -590,6 +594,14 @@ Coc_Log_Config coc_global_log_config = {0};
 
 /*
 Recent Revision History:
+
+1.4.1 (2026-01-16)
+
+Added:
+- coc_str_back(), coc_str_append_many()
+
+Changed:
+- char coc_str_pop() -> void coc_str_pop()
 
 1.4.0 (2026-01-10)
 
