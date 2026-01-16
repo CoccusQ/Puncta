@@ -107,3 +107,25 @@ typedef struct Number {
 返回`double`值
 
 `cond ? a : b`: 用法类似C语言的三目运算符，右结合
+
+## Action C API
+
+可以用C语言编写act扩展函数并注册到虚拟机中
+
+函数签名：
+
+```c
+typedef void (Action *)(VM *vm, Number *n);
+
+void register_act(VM *vm, const char *name, Action act);
+```
+
+使用方法：
+
+1. 先`#define COC_IMPLEMENTATION`，再`#include "puncta.h"`
+
+2. 使用`coc_log_init()`初始化日志系统
+
+3. 按照约定的格式定义一个action，建议使用`act_xxx`的命名方式，然后定义一个`void register_user_actions(VM *vm)`函数，在其中使用`register_act()`注册自定义的action
+
+4. 使用`run_file(const char *filename, void (*register_user_actions)(VM *))`时，将自定义的`void register_user_actions(VM *vm)`传入第二个参数
